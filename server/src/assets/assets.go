@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -9,11 +10,10 @@ import (
 	"integration-test-platform/server/embedded"
 )
 
-// Web serves index, static, and pages from embed or disk.
+// Web serves the built SPA (index.html + assets/) from embed or disk.
 type Web struct {
 	root     http.FileSystem
 	ioRoot   fs.FS
-	pagesFS  fs.FS
 	diskRoot string
 }
 
@@ -24,24 +24,17 @@ func New() (*Web, error) {
 		if err != nil {
 			return nil, err
 		}
-		pages, err := fs.Sub(sub, "pages")
-		if err != nil {
-			return nil, err
-		}
 		return &Web{
-			root:    http.FS(sub),
-			ioRoot:  sub,
-			pagesFS: pages,
+			root:   http.FS(sub),
+			ioRoot: sub,
 		}, nil
 	}
 	root, err := devWebDir()
 	if err != nil {
 		return nil, err
 	}
-	pagesDir := filepath.Join(root, "pages")
 	return &Web{
 		root:     http.Dir(root),
-		pagesFS:  os.DirFS(pagesDir),
 		diskRoot: root,
 	}, nil
 }
@@ -54,7 +47,11 @@ func devWebDir() (string, error) {
 	dir := wd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "web"), nil
+			dist := filepath.Join(dir, "web", "dist")
+			if _, err := os.Stat(filepath.Join(dist, "index.html")); err == nil {
+				return dist, nil
+			}
+			return "", fmt.Errorf("web/dist not found: run npm install && npm run build in web/")
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -91,11 +88,3 @@ func (w *Web) DiskRoot() string {
 	return w.diskRoot
 }
 
-// PageExists returns whether a page file exists under pages/.
-func (w *Web) PageExists(name string) bool {
-	if name == "" || filepath.Base(name) != name {
-		return false
-	}
-	_, err := fs.Stat(w.pagesFS, name)
-	return err == nil
-}

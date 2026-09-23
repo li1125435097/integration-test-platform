@@ -6,12 +6,12 @@ import (
 	"os"
 )
 
-// Item is one menu node (leaf or group).
+// Item is one menu node (leaf or group). Leaf items use path (Vue Router hash path).
 type Item struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Icon     string `json:"icon,omitempty"`
-	Page     string `json:"page,omitempty"`
+	Path     string `json:"path,omitempty"`
 	Children []Item `json:"children,omitempty"`
 }
 
@@ -33,26 +33,26 @@ func Load(path string) (*File, error) {
 	return &f, nil
 }
 
-// Validate ensures every leaf page exists according to pageExists.
-func (f *File) Validate(pageExists func(string) bool) error {
-	var walk func(items []Item, path string) error
+// Validate ensures menu shape is consistent (SPA routes, no HTML page files).
+func (f *File) Validate() error {
+	var walk func(items []Item, prefix string) error
 	walk = func(items []Item, prefix string) error {
 		for _, it := range items {
 			label := prefix + it.ID
 			if len(it.Children) > 0 {
-				if it.Page != "" {
-					return fmt.Errorf("menu item %q: group must not have page", label)
+				if it.Path != "" {
+					return fmt.Errorf("menu item %q: group must not have path", label)
 				}
 				if err := walk(it.Children, label+"/"); err != nil {
 					return err
 				}
 				continue
 			}
-			if it.Page == "" {
-				return fmt.Errorf("menu item %q: leaf requires page", label)
+			if it.Path == "" {
+				return fmt.Errorf("menu item %q: leaf requires path", label)
 			}
-			if !pageExists(it.Page) {
-				return fmt.Errorf("menu item %q: page %q not found", label, it.Page)
+			if it.Path[0] != '/' {
+				return fmt.Errorf("menu item %q: path must start with /", label)
 			}
 		}
 		return nil

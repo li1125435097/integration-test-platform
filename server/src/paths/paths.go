@@ -51,6 +51,16 @@ func ResolveConfigDir(explicit string) (string, error) {
 	return filepath.Join(root, "config"), nil
 }
 
+// DataDir is the application data directory under config (e.g. scripts.json).
+func DataDir(configDir string) string {
+	return filepath.Join(configDir, "data")
+}
+
+// ScriptFilesDir holds script bodies and version snapshots.
+func ScriptFilesDir(dataDir string) string {
+	return filepath.Join(dataDir, "script-files")
+}
+
 // DevWebDir returns repository root web/ for development (disk serving).
 func DevWebDir() (string, error) {
 	root, err := ProjectRoot()

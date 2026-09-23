@@ -14,6 +14,7 @@ import (
 	"integration-test-platform/server/src/handler"
 	"integration-test-platform/server/src/menu"
 	"integration-test-platform/server/src/paths"
+	"integration-test-platform/server/src/scripts"
 )
 
 var version = "0.1.0-dev"
@@ -40,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("menu: %v", err)
 	}
-	if err := menuFile.Validate(webAssets.PageExists); err != nil {
+	if err := menuFile.Validate(); err != nil {
 		log.Fatalf("menu validate: %v", err)
 	}
 
@@ -48,6 +49,13 @@ func main() {
 	r := gin.Default()
 
 	handler.RegisterMenu(r, menuFile.Items)
+
+	dataDir := paths.DataDir(configDir)
+	scriptSvc := scripts.NewService(dataDir)
+	if err := scriptSvc.EnsureDataDir(); err != nil {
+		log.Fatalf("data dir: %v", err)
+	}
+	handler.RegisterScripts(r, scriptSvc)
 
 	r.GET("/", func(c *gin.Context) {
 		if disk := webAssets.DiskRoot(); disk != "" {
@@ -61,8 +69,7 @@ func main() {
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
-	r.StaticFS("/static", webAssets.SubFS("static"))
-	r.StaticFS("/pages", webAssets.SubFS("pages"))
+	r.StaticFS("/assets", webAssets.SubFS("assets"))
 
 	log.Printf("integration-test-platform %s listening on %s (config: %s)", version, cfg.Addr, configDir)
 	if err := r.Run(cfg.Addr); err != nil {

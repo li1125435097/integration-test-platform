@@ -82,6 +82,9 @@ coverage/
 .env.*
 !.env.example
 
+# Local script bodies (metadata scripts.json may be committed)
+config/data/script-files/
+
 # Misc
 *.tgz
 .DS_Store

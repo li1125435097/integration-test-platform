@@ -1,29 +1,9 @@
 {
   "items": [
     {
-      "id": "dashboard",
-      "title": "仪表盘",
-      "icon": "bi-speedometer2",
-      "page": "dashboard.html"
-    },
-    {
-      "id": "system",
-      "title": "系统",
-      "icon": "bi-gear",
-      "children": [
-        {
-          "id": "about",
-          "title": "关于",
-          "icon": "bi-info-circle",
-          "page": "about.html"
-        },
-        {
-          "id": "settings",
-          "title": "设置",
-          "icon": "bi-sliders",
-          "page": "settings.html"
-        }
-      ]
+      "id": "scripts",
+      "title": "脚本管理",
+      "path": "/scripts"
     }
   ]
 }

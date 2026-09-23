@@ -5,25 +5,30 @@
 ## 技术栈
 
 - **后端**：Go + Gin（`server/`）
-- **前端**：jQuery + Bootstrap 5（`web/`，仅 HTML/CSS/JS）
-- **菜单**：集中配置于 [`config/menu.json`](config/menu.json)
+- **前端**：Vue 3 + Vue Router + Element Plus + Vite（`web/`）
+- **脚本编辑器**：CodeMirror 6（`web/src/views/scripts/`）
+- **菜单**：侧栏由 Vue Router 的 `meta.menu` 定义（见 `web/src/router/menu.js`）；[`config/menu.json`](config/menu.json) 保留与路由一致的条目，供服务端校验
 
-布局：顶部栏 + 左侧边栏 + 主内容区。外壳通过 AJAX 从 `web/pages/` 加载页面片段。
+布局：顶部栏 + 左侧边栏 + 主内容区（Hash 路由 SPA）。开发模式下 Go 服务托管 `web/dist/` 构建产物；发布构建将前端嵌入可执行文件。
+
+> 前端已由 jQuery + Bootstrap（`web/pages/` 片段 + CDN）重构为上述 Vue 技术栈，旧的多页 HTML 片段方案已移除。
 
 ## 开发
 
-当前只有 Go 依赖。前端 jQuery / Bootstrap 走 CDN，没有 `npm` / `package.json`。
+需要 **Go 1.22+** 与 **Node.js 18+**（前端构建）。
 
 ### 环境要求
 
-- Go **1.22+**
 - 在仓库根目录工作（存在 `go.mod`）
 
 ```bash
 go version
+node -v
 ```
 
 ### 安装依赖
+
+Go：
 
 ```bash
 go mod download
@@ -36,6 +41,13 @@ go mod tidy
 ```
 
 `go.sum` 已在仓库中时，一般 `go mod download` 即可。
+
+前端：
+
+```bash
+cd web
+npm install
+```
 
 ### 使用中国镜像（Go 模块）
 
@@ -78,11 +90,34 @@ go env -w GOSUMDB=sum.golang.google.cn
 go env GOPROXY GOSUMDB
 ```
 
-页面能打开但样式缺失时，多半是前端 CDN（`cdn.jsdelivr.net`）被墙，与 Go 镜像无关。
+npm 安装较慢时，可临时使用国内 registry，例如：
+
+```bash
+npm config set registry https://registry.npmmirror.com
+```
+
+### 前端依赖与构建
+
+```bash
+cd web
+npm install
+npm run build
+```
+
+构建输出在 `web/dist/`，Go 开发模式会从这里提供静态资源。
+
+开发时可单独启动 Vite（`/api` 代理到 `:8080`）：
+
+```bash
+cd web
+npm run dev
+```
+
+浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)，需同时运行 Go 服务。
 
 ### 启动
 
-在项目根目录：
+在项目根目录（需已执行 `npm run build` 生成 `web/dist`）：
 
 ```bash
 go run ./server -config-dir ./config
@@ -96,7 +131,7 @@ make run
 
 默认监听 `:8080`，浏览器打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)。
 
-开发模式直接读磁盘上的 `./web`，改 HTML/CSS/JS 后刷新即可，无需同步、无需编译前端。
+改 Vue 源码后需重新 `npm run build`，再刷新 `:8080`；或使用 `npm run dev` + API 代理进行前端热更新。
 
 可选参数：
 
@@ -108,7 +143,12 @@ go run ./server -config-dir ./config -addr :8080
 
 ### 热更新（Air）
 
-开发时用 [Air](https://github.com/air-verse/air) 监听源码变更并自动重新编译、重启服务。仓库根目录已有 [`.air.toml`](.air.toml)：构建 `./server`，启动参数为 `-config-dir ./config`，并监听 `.go`、`.html`、`.json` 等文件。前端 CSS/JS 仍直接读磁盘，改完刷新浏览器即可。
+开发时用 [Air](https://github.com/air-verse/air) 监听 **Go 源码**变更并自动重新编译、重启服务。仓库根目录已有 [`.air.toml`](.air.toml)：构建 `./server`，启动参数为 `-config-dir ./config`，监听 `server/` 下 `.go`、`.json` 等；**不包含** `web/` 源码。
+
+前端改动请任选其一：
+
+- 在 `web/` 运行 `npm run dev`（推荐，HMR）
+- 或修改后执行 `npm run build`，再刷新浏览器
 
 国内安装前先设置模块代理（与上文相同，推荐 goproxy.cn）：
 
@@ -138,13 +178,13 @@ air init
 
 ### 新增页面与菜单项
 
-1. 在 `web/pages/your-page.html` 下添加 HTML 片段（不要写完整文档外壳）。
-2. 在 `config/menu.json` 中增加一条 `"page": "your-page.html"`。
-3. 重启服务端（启动时会校验每个菜单页是否存在）。使用 Air 时保存后会自动重启。
+1. 在 `web/src/views/` 添加页面组件，并在 `web/src/router/menu.js`（及 `web/src/router/index.js`）注册路由与 `meta.menu`。
+2. 在 `config/menu.json` 的 `items` 中增加对应 `"path"`（须与路由 path 一致，如 `/scripts`）。
+3. 重新 `npm run build` 后重启 Go 服务（或使用 Air 监听后端 / `config` 变更）。
 
 ## 构建（单文件可执行程序）
 
-发布构建会将 `web/` 复制到 `server/embedded/web/`，并以 `-tags release` 嵌入二进制。同步步骤会自动执行：
+发布构建会通过 [`scripts/sync-web.sh`](scripts/sync-web.sh) / [`scripts/sync-web.ps1`](scripts/sync-web.ps1) 在 `web/` 执行 `npm ci && npm run build`，将 `web/dist` 复制到 `server/embedded/web/`，并以 `-tags release` 嵌入二进制：
 
 ```bash
 make build          # 当前操作系统/架构 -> dist/itp-<os>-<arch>[.exe]
@@ -164,8 +204,19 @@ Windows PowerShell：
 ## 项目结构
 
 ```
-server/          Go 入口与 src/
-web/             前端源码（不含 .go 文件）
-config/          menu.json 及其他配置
-scripts/         sync-web、跨平台构建
+server/              Go 入口与 src/（API、静态资源托管）
+server/embedded/web/ 发布构建时由 sync-web 写入的前端 dist（嵌入二进制）
+web/                 前端源码（Vue + Vite）
+  src/
+    api/             后端 API 封装
+    components/      通用组件
+    layouts/         布局（MainLayout）
+    router/          路由与菜单 meta
+    theme/           主题切换
+    views/           页面（如 scripts/）
+  dist/              npm run build 输出（开发模式由 Go 读取）
+config/
+  menu.json          菜单 path 校验
+  data/              业务数据（如 scripts.json、脚本文件）
+scripts/             sync-web、跨平台构建
 ```
