@@ -1,14 +1,19 @@
 {
   "items": [
     {
+      "id": "interpreters",
+      "title": "解释器管理",
+      "path": "/interpreters"
+    },
+    {
       "id": "scripts",
       "title": "脚本管理",
       "path": "/scripts"
     },
     {
-      "id": "interpreters",
-      "title": "解释器管理",
-      "path": "/interpreters"
+      "id": "execution-records",
+      "title": "执行记录",
+      "path": "/execution-records"
     }
   ]
 }

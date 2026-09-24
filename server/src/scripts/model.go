@@ -13,7 +13,7 @@ type Script struct {
 	Name           string    `json:"name"`
 	Description    string    `json:"description"`
 	Language       string    `json:"language"`
-	HasInterpreter bool      `json:"hasInterpreter"`
+	InterpreterID string    `json:"interpreterId,omitempty"`
 	FileName       string    `json:"fileName"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	Versions       []Version `json:"versions"`
@@ -33,7 +33,7 @@ type ListItem struct {
 	Name           string    `json:"name"`
 	Description    string    `json:"description"`
 	Language       string    `json:"language"`
-	HasInterpreter bool      `json:"hasInterpreter"`
+	InterpreterID string    `json:"interpreterId,omitempty"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	// CurrentVersion is the version id whose snapshot matches the current file.
 	// Empty means the saved file differs from every snapshot (or there is none).

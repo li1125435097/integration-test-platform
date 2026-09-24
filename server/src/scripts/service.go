@@ -81,7 +81,7 @@ func (sc Script) toListItem() ListItem {
 		Name:           sc.Name,
 		Description:    sc.Description,
 		Language:       sc.Language,
-		HasInterpreter: sc.HasInterpreter,
+		InterpreterID: sc.InterpreterID,
 		UpdatedAt:      sc.UpdatedAt,
 	}
 }
@@ -133,10 +133,11 @@ func (s *Service) Get(id string) (*Detail, error) {
 }
 
 type CreateInput struct {
-	Name        string
-	Description string
-	Language    string
-	Content     string
+	Name          string
+	Description     string
+	Language        string
+	Content         string
+	InterpreterID   string
 }
 
 // Create adds a new script with initial file content.
@@ -163,7 +164,7 @@ func (s *Service) Create(in CreateInput) (*Detail, error) {
 		Name:           in.Name,
 		Description:    in.Description,
 		Language:       in.Language,
-		HasInterpreter: false,
+		InterpreterID: in.InterpreterID,
 		FileName:       fileName,
 		UpdatedAt:      now,
 		Versions:       []Version{},
@@ -178,10 +179,11 @@ func (s *Service) Create(in CreateInput) (*Detail, error) {
 }
 
 type UpdateInput struct {
-	Name        string
-	Description string
-	Language    string
-	Content     string
+	Name          string
+	Description     string
+	Language        string
+	Content         string
+	InterpreterID   string
 }
 
 // Update saves metadata and current file; renames current file if language changes.
@@ -212,6 +214,7 @@ func (s *Service) Update(id string, in UpdateInput) (*Detail, error) {
 		sc.Name = in.Name
 		sc.Description = in.Description
 		sc.Language = in.Language
+		sc.InterpreterID = in.InterpreterID
 		sc.UpdatedAt = time.Now().UTC()
 		if sc.FileName != newFileName {
 			newPath := s.currentPath(id, newFileName)

@@ -89,3 +89,25 @@ export async function deleteVersion(id, versionId) {
     )
   );
 }
+
+/** 编辑页试运行：不入库执行记录 */
+export async function runScriptPreview(payload) {
+  return parseJson(
+    await fetch('/api/scripts/run-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+  );
+}
+
+/** 列表页执行已保存脚本：入库执行记录 */
+export async function runScript(id) {
+  return parseJson(
+    await fetch(`/api/scripts/${encodeURIComponent(id)}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+  );
+}

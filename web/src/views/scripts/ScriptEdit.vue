@@ -25,10 +25,37 @@
           </el-col>
           <el-col :xs="24" :sm="12" :lg="8">
             <el-form-item label="脚本语言">
-              <el-select v-model="form.language" placeholder="选择语言" @change="rebuildEditor">
-                <el-option label="JavaScript" value="javascript" />
-                <el-option label="Python" value="python" />
-                <el-option label="Shell" value="shell" />
+              <el-select
+                v-model="form.language"
+                placeholder="请先在解释器管理配置语言"
+                :disabled="!languageOptions.length"
+                style="width: 100%"
+                @change="onLanguageChange"
+              >
+                <el-option
+                  v-for="opt in languageOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :lg="8">
+            <el-form-item label="解释器">
+              <el-select
+                v-model="form.interpreterId"
+                placeholder="默认"
+                clearable
+                style="width: 100%"
+              >
+                <el-option label="默认（按语言使用解释器管理中的默认项）" value="" />
+                <el-option
+                  v-for="opt in languageInterpreterOptions"
+                  :key="opt.id"
+                  :label="interpreterOptionLabel(opt)"
+                  :value="opt.id"
+                />
               </el-select>
             </el-form-item>
           </el-col>
@@ -52,7 +79,18 @@
       <template #header>
         <el-row justify="space-between" align="middle">
           <el-text tag="b">脚本内容</el-text>
-          <el-tag effect="plain" size="small">{{ languageLabel(form.language) }}</el-tag>
+          <el-space wrap>
+            <el-tag effect="plain" size="small">{{ languageLabel(form.language) }}</el-tag>
+            <el-button
+              type="primary"
+              size="small"
+              :icon="VideoPlay"
+              :loading="runLoading"
+              @click="onRunPreview"
+            >
+              执行
+            </el-button>
+          </el-space>
         </el-row>
       </template>
       <div ref="editorHost" class="editor-host" />
@@ -86,6 +124,13 @@
         <el-button type="primary" :loading="addingVersion" @click="submitAddVersion">确认</el-button>
       </template>
     </el-dialog>
+
+    <ScriptRunResultDialog
+      v-model="runResultVisible"
+      title="试执行结果（未写入执行记录）"
+      :loading="runLoading"
+      :result="runResult"
+    />
   </div>
 </template>
 
@@ -93,14 +138,20 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { ArrowLeft, Check, FolderAdd } from '@element-plus/icons-vue';
+import { ArrowLeft, Check, FolderAdd, VideoPlay } from '@element-plus/icons-vue';
+import ScriptRunResultDialog from '@/components/ScriptRunResultDialog.vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import * as scriptsApi from '@/api/scripts';
+import * as interpretersApi from '@/api/interpreters';
 import { languageLabel } from '@/utils/format';
+import {
+  interpretersForLanguage,
+  languageOptionsFromInterpreters
+} from '@/utils/interpreters';
 import { nextVersionId } from '@/utils/versions';
 
 const route = useRoute();
@@ -115,12 +166,47 @@ const addVersionVisible = ref(false);
 const addingVersion = ref(false);
 const pendingVersionId = ref('');
 const addVersionRemark = ref('');
+const interpreters = ref([]);
+const runLoading = ref(false);
+const runResultVisible = ref(false);
+const runResult = ref(null);
+
 const form = reactive({
   name: '',
   description: '',
   language: 'javascript',
+  interpreterId: '',
   content: ''
 });
+
+const languageOptions = computed(() =>
+  languageOptionsFromInterpreters(interpreters.value, form.language)
+);
+
+const languageInterpreterOptions = computed(() =>
+  interpretersForLanguage(interpreters.value, form.language)
+);
+
+function applyDefaultLanguage() {
+  const opts = languageOptionsFromInterpreters(interpreters.value);
+  if (opts.some((o) => o.value === form.language)) return;
+  const preferred = opts.find((o) => o.value === 'javascript') || opts[0];
+  form.language = preferred?.value || 'javascript';
+}
+
+function interpreterOptionLabel(interp) {
+  const ver = interp.version?.trim();
+  const base = ver || interp.path || interp.id;
+  return interp.isDefault ? `${base}（默认）` : base;
+}
+
+function onLanguageChange() {
+  const stillValid = languageInterpreterOptions.value.some((i) => i.id === form.interpreterId);
+  if (!stillValid) {
+    form.interpreterId = '';
+  }
+  rebuildEditor();
+}
 
 const pageTitle = computed(() =>
   route.params.id === 'new' || !scriptId.value ? '新建脚本' : `编辑 · ${form.name || '未命名'}`
@@ -160,8 +246,38 @@ function getPayload() {
     name: form.name.trim(),
     description: form.description.trim(),
     language: form.language,
+    interpreterId: form.interpreterId || '',
     content: editorView ? editorView.state.doc.toString() : form.content
   };
+}
+
+async function onRunPreview() {
+  const payload = getPayload();
+  if (!payload.content.trim()) {
+    ElMessage.warning('脚本内容为空');
+    return;
+  }
+  runResultVisible.value = true;
+  runLoading.value = true;
+  runResult.value = null;
+  try {
+    runResult.value = await scriptsApi.runScriptPreview({
+      language: payload.language,
+      interpreterId: payload.interpreterId,
+      content: payload.content
+    });
+  } catch (e) {
+    runResult.value = {
+      success: false,
+      exitCode: -1,
+      durationMs: 0,
+      stdout: '',
+      stderr: '',
+      error: e.message || '执行失败'
+    };
+  } finally {
+    runLoading.value = false;
+  }
 }
 
 async function save() {
@@ -231,6 +347,7 @@ async function loadScript(id) {
     form.name = data.name || '';
     form.description = data.description || '';
     form.language = data.language || 'javascript';
+    form.interpreterId = data.interpreterId || '';
     form.content = data.content || '';
     createEditor(form.content, form.language);
   } catch {
@@ -245,15 +362,27 @@ function initFromRoute() {
     scriptId.value = null;
     form.name = '';
     form.description = '';
-    form.language = 'javascript';
+    form.interpreterId = '';
     form.content = '';
+    applyDefaultLanguage();
     createEditor('', form.language);
     return;
   }
   loadScript(id);
 }
 
-onMounted(initFromRoute);
+async function loadInterpreters() {
+  try {
+    interpreters.value = await interpretersApi.listInterpreters();
+  } catch {
+    interpreters.value = [];
+  }
+}
+
+onMounted(async () => {
+  await loadInterpreters();
+  initFromRoute();
+});
 
 watch(
   () => route.params.id,

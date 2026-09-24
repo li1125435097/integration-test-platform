@@ -22,15 +22,14 @@
             <el-tag effect="plain" round size="small">{{ languageLabel(row.language) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="解释器" width="108" align="center">
+        <el-table-column label="解释器" min-width="120" align="center" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag
-              :type="row.hasInterpreter ? 'success' : 'info'"
-              effect="light"
-              size="small"
+            <span
+              class="interpreter-cell"
+              :class="interpreterCell(row).ok ? 'is-ok' : 'is-missing'"
             >
-              {{ row.hasInterpreter ? '有' : '无' }}
-            </el-tag>
+              {{ interpreterCell(row).text }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="当前版本" width="120" align="center">
@@ -44,12 +43,22 @@
         <el-table-column label="更新时间" width="172" align="center">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="260" align="center" fixed="right">
+        <el-table-column label="操作" width="320" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link :icon="EditPen" @click="goEdit(row.id)">编辑</el-button>
             <el-divider direction="vertical" />
             <el-button type="primary" link :icon="Clock" @click="openVersionDialog(row)">
               版本变更
+            </el-button>
+            <el-divider direction="vertical" />
+            <el-button
+              type="success"
+              link
+              :icon="VideoPlay"
+              :loading="runScriptId === row.id"
+              @click="onRunScript(row)"
+            >
+              执行
             </el-button>
             <el-divider direction="vertical" />
             <el-button type="danger" link :icon="Delete" @click="confirmDelete(row)">删除</el-button>
@@ -152,6 +161,13 @@
         <el-button type="primary" :loading="savingRemark" @click="submitRemark">保存</el-button>
       </template>
     </el-dialog>
+
+    <ScriptRunResultDialog
+      v-model="runResultVisible"
+      :title="runResultTitle"
+      :loading="runLoading"
+      :result="runResult"
+    />
   </div>
 </template>
 
@@ -159,9 +175,12 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Refresh, EditPen, Clock, Delete } from '@element-plus/icons-vue';
+import { Plus, Refresh, EditPen, Clock, Delete, VideoPlay } from '@element-plus/icons-vue';
+import ScriptRunResultDialog from '@/components/ScriptRunResultDialog.vue';
 import * as scriptsApi from '@/api/scripts';
+import * as interpretersApi from '@/api/interpreters';
 import { formatTime, languageLabel } from '@/utils/format';
+import { scriptInterpreterCell } from '@/utils/interpreters';
 import {
   nextAutoSnapshotVersionId,
   TEMP_SNAPSHOT_REMARK,
@@ -172,6 +191,11 @@ import {
 const router = useRouter();
 const loading = ref(false);
 const scripts = ref([]);
+const interpreters = ref([]);
+
+function interpreterCell(row) {
+  return scriptInterpreterCell(row, interpreters.value);
+}
 
 const versionVisible = ref(false);
 const versionLoading = ref(false);
@@ -188,13 +212,25 @@ const remarkVersionId = ref('');
 const remarkVersionDisplayId = ref('');
 const remarkDraft = ref('');
 
+const runScriptId = ref('');
+const runLoading = ref(false);
+const runResultVisible = ref(false);
+const runResultTitle = ref('执行结果');
+const runResult = ref(null);
+
 async function loadList() {
   loading.value = true;
   try {
-    scripts.value = await scriptsApi.listScripts();
+    const [scriptList, interpreterList] = await Promise.all([
+      scriptsApi.listScripts(),
+      interpretersApi.listInterpreters()
+    ]);
+    scripts.value = scriptList;
+    interpreters.value = interpreterList;
   } catch (e) {
     ElMessage.error(e.message || '加载脚本列表失败');
     scripts.value = [];
+    interpreters.value = [];
   } finally {
     loading.value = false;
   }
@@ -318,6 +354,29 @@ async function confirmRestore() {
   }
 }
 
+async function onRunScript(row) {
+  runScriptId.value = row.id;
+  runResultTitle.value = `执行结果 · ${row.name || row.id}`;
+  runResultVisible.value = true;
+  runLoading.value = true;
+  runResult.value = null;
+  try {
+    runResult.value = await scriptsApi.runScript(row.id);
+  } catch (e) {
+    runResult.value = {
+      success: false,
+      exitCode: -1,
+      durationMs: 0,
+      stdout: '',
+      stderr: '',
+      error: e.message || '执行失败'
+    };
+  } finally {
+    runLoading.value = false;
+    runScriptId.value = '';
+  }
+}
+
 async function confirmDelete(row) {
   try {
     await ElMessageBox.confirm(
@@ -374,5 +433,18 @@ onMounted(loadList);
 .version-dialog-table :deep(.version-op-col .cell) {
   white-space: nowrap;
   overflow: visible;
+}
+
+.interpreter-cell {
+  font-size: var(--el-font-size-small);
+  font-weight: 500;
+}
+
+.interpreter-cell.is-ok {
+  color: var(--el-color-success);
+}
+
+.interpreter-cell.is-missing {
+  color: var(--el-color-danger);
 }
 </style>

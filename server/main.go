@@ -11,10 +11,12 @@ import (
 
 	"integration-test-platform/server/src/assets"
 	"integration-test-platform/server/src/config"
+	"integration-test-platform/server/src/executions"
 	"integration-test-platform/server/src/handler"
 	"integration-test-platform/server/src/interpreters"
 	"integration-test-platform/server/src/menu"
 	"integration-test-platform/server/src/paths"
+	"integration-test-platform/server/src/scriptexec"
 	"integration-test-platform/server/src/scripts"
 )
 
@@ -56,13 +58,20 @@ func main() {
 	if err := scriptSvc.EnsureDataDir(); err != nil {
 		log.Fatalf("data dir: %v", err)
 	}
-	handler.RegisterScripts(r, scriptSvc)
-
 	interpSvc := interpreters.NewService(dataDir)
 	if err := interpSvc.EnsureDataDir(); err != nil {
 		log.Fatalf("interpreters data: %v", err)
 	}
 	handler.RegisterInterpreters(r, interpSvc)
+
+	recordSvc := executions.NewService(dataDir)
+	if err := recordSvc.EnsureDataDir(); err != nil {
+		log.Fatalf("execution records: %v", err)
+	}
+	handler.RegisterExecutionRecords(r, recordSvc)
+
+	runner := scriptexec.NewRunner(dataDir, scriptSvc, interpSvc, recordSvc)
+	handler.RegisterScripts(r, scriptSvc, runner)
 
 	r.GET("/", func(c *gin.Context) {
 		if disk := webAssets.DiskRoot(); disk != "" {

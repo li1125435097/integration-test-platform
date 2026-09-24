@@ -2,6 +2,18 @@
  * 侧栏菜单：由路由 meta.menu 推导（Vue Router 推荐做法）。
  */
 export const menuRoutes = [
+  
+  {
+    path: '/interpreters',
+    name: 'interpreters',
+    component: () => import('@/views/interpreters/InterpreterList.vue'),
+    meta: {
+      menu: {
+        title: '解释器管理',
+        icon: 'Cpu'
+      }
+    }
+  },
   {
     path: '/scripts',
     name: 'scripts',
@@ -14,13 +26,13 @@ export const menuRoutes = [
     }
   },
   {
-    path: '/interpreters',
-    name: 'interpreters',
-    component: () => import('@/views/interpreters/InterpreterList.vue'),
+    path: '/execution-records',
+    name: 'execution-records',
+    component: () => import('@/views/executions/ExecutionRecordList.vue'),
     meta: {
       menu: {
-        title: '解释器管理',
-        icon: 'Cpu'
+        title: '执行记录',
+        icon: 'List'
       }
     }
   },

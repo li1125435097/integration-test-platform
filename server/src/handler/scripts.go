@@ -6,20 +6,23 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"integration-test-platform/server/src/scriptexec"
 	"integration-test-platform/server/src/scripts"
 )
 
 // Scripts exposes script CRUD and version APIs.
 type Scripts struct {
-	Svc *scripts.Service
+	Svc    *scripts.Service
+	Runner *scriptexec.Runner
 }
 
 // RegisterScripts mounts script routes on r.
-func RegisterScripts(r *gin.Engine, svc *scripts.Service) {
-	h := Scripts{Svc: svc}
+func RegisterScripts(r *gin.Engine, svc *scripts.Service, runner *scriptexec.Runner) {
+	h := Scripts{Svc: svc, Runner: runner}
 	g := r.Group("/api/scripts")
 	g.GET("", h.List)
 	g.POST("", h.Create)
+	g.POST("/run-preview", h.RunPreview)
 	g.GET("/:id", h.Get)
 	g.PUT("/:id", h.Update)
 	g.DELETE("/:id", h.Delete)
@@ -28,6 +31,51 @@ func RegisterScripts(r *gin.Engine, svc *scripts.Service) {
 	g.PUT("/:id/versions/:versionId", h.UpdateVersionRemark)
 	g.DELETE("/:id/versions/:versionId", h.DeleteVersion)
 	g.POST("/:id/restore", h.Restore)
+	g.POST("/:id/run", h.RunSaved)
+}
+
+type runPreviewBody struct {
+	Language      string `json:"language"`
+	InterpreterID string `json:"interpreterId"`
+	Content       string `json:"content"`
+}
+
+func (h Scripts) RunPreview(c *gin.Context) {
+	if h.Runner == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runner not configured"})
+		return
+	}
+	var body runPreviewBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	if body.Language == "" {
+		body.Language = "javascript"
+	}
+	out := h.Runner.RunPreview(scriptexec.PreviewInput{
+		Language:      body.Language,
+		InterpreterID: body.InterpreterID,
+		Content:       body.Content,
+	})
+	c.JSON(http.StatusOK, out)
+}
+
+func (h Scripts) RunSaved(c *gin.Context) {
+	if h.Runner == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "runner not configured"})
+		return
+	}
+	id := c.Param("id")
+	out := h.Runner.RunSaved(id)
+	if out.Error != "" {
+		switch out.Error {
+		case scripts.ErrNotFound.Error():
+			c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func (h Scripts) List(c *gin.Context) {
@@ -43,10 +91,11 @@ func (h Scripts) List(c *gin.Context) {
 }
 
 type scriptBody struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Language    string `json:"language"`
-	Content     string `json:"content"`
+	Name          string `json:"name"`
+	Description     string `json:"description"`
+	Language        string `json:"language"`
+	Content         string `json:"content"`
+	InterpreterID   string `json:"interpreterId"`
 }
 
 func (h Scripts) Create(c *gin.Context) {
@@ -59,10 +108,11 @@ func (h Scripts) Create(c *gin.Context) {
 		body.Language = "javascript"
 	}
 	detail, err := h.Svc.Create(scripts.CreateInput{
-		Name:        body.Name,
-		Description: body.Description,
-		Language:    body.Language,
-		Content:     body.Content,
+		Name:          body.Name,
+		Description:     body.Description,
+		Language:        body.Language,
+		Content:         body.Content,
+		InterpreterID:   body.InterpreterID,
 	})
 	if err != nil {
 		writeScriptError(c, err)
@@ -92,10 +142,11 @@ func (h Scripts) Update(c *gin.Context) {
 		body.Language = "javascript"
 	}
 	detail, err := h.Svc.Update(id, scripts.UpdateInput{
-		Name:        body.Name,
-		Description: body.Description,
-		Language:    body.Language,
-		Content:     body.Content,
+		Name:          body.Name,
+		Description:     body.Description,
+		Language:        body.Language,
+		Content:         body.Content,
+		InterpreterID:   body.InterpreterID,
 	})
 	if err != nil {
 		writeScriptError(c, err)
