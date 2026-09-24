@@ -82,8 +82,8 @@ coverage/
 .env.*
 !.env.example
 
-# Local script bodies (metadata scripts.json may be committed)
-config/data/script-files/
+# Local runtime data (scripts metadata, script bodies, etc.)
+config/data/
 
 # Misc
 *.tgz
