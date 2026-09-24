@@ -14,6 +14,17 @@ export const menuRoutes = [
     }
   },
   {
+    path: '/interpreters',
+    name: 'interpreters',
+    component: () => import('@/views/interpreters/InterpreterList.vue'),
+    meta: {
+      menu: {
+        title: '解释器管理',
+        icon: 'Cpu'
+      }
+    }
+  },
+  {
     path: '/script-editor/:id',
     name: 'script-editor',
     component: () => import('@/views/scripts/ScriptEdit.vue'),

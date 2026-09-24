@@ -31,13 +31,13 @@
 <script setup>
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { Document } from '@element-plus/icons-vue';
+import { Cpu, Document } from '@element-plus/icons-vue';
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue';
 import { menuItemsFromRoutes, menuRoutes } from '@/router/menu';
 
 const route = useRoute();
 const menuItems = menuItemsFromRoutes(menuRoutes);
-const iconMap = { Document };
+const iconMap = { Cpu, Document };
 
 const activeMenu = computed(() =>
   route.path.startsWith('/script-editor') ? '/scripts' : route.path

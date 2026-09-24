@@ -4,6 +4,11 @@
       "id": "scripts",
       "title": "脚本管理",
       "path": "/scripts"
+    },
+    {
+      "id": "interpreters",
+      "title": "解释器管理",
+      "path": "/interpreters"
     }
   ]
 }
