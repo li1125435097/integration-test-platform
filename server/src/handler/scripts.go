@@ -25,6 +25,8 @@ func RegisterScripts(r *gin.Engine, svc *scripts.Service) {
 	g.DELETE("/:id", h.Delete)
 	g.GET("/:id/versions", h.ListVersions)
 	g.POST("/:id/versions", h.AddVersion)
+	g.PUT("/:id/versions/:versionId", h.UpdateVersionRemark)
+	g.DELETE("/:id/versions/:versionId", h.DeleteVersion)
 	g.POST("/:id/restore", h.Restore)
 }
 
@@ -139,6 +141,36 @@ func (h Scripts) AddVersion(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, ver)
+}
+
+type versionRemarkBody struct {
+	Remark string `json:"remark"`
+}
+
+func (h Scripts) UpdateVersionRemark(c *gin.Context) {
+	id := c.Param("id")
+	versionID := c.Param("versionId")
+	var body versionRemarkBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+		return
+	}
+	ver, err := h.Svc.UpdateVersionRemark(id, versionID, body.Remark)
+	if err != nil {
+		writeScriptError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ver)
+}
+
+func (h Scripts) DeleteVersion(c *gin.Context) {
+	id := c.Param("id")
+	versionID := c.Param("versionId")
+	if err := h.Svc.DeleteVersion(id, versionID); err != nil {
+		writeScriptError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 type restoreBody struct {

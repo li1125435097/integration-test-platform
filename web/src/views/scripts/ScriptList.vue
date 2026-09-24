@@ -66,7 +66,7 @@
     <el-dialog
       v-model="versionVisible"
       :title="versionDialogTitle"
-      width="640px"
+      width="720px"
       destroy-on-close
       align-center
     >
@@ -84,6 +84,7 @@
         />
         <el-table
           v-else
+          class="version-dialog-table"
           :data="versions"
           highlight-current-row
           max-height="320"
@@ -100,6 +101,19 @@
           <el-table-column label="创建时间" width="168" align="center">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
+          <el-table-column label="操作" width="200" align="center" class-name="version-op-col">
+            <template #default="{ row }">
+              <div class="version-op-actions">
+                <el-button type="primary" link :icon="EditPen" @click="openRemarkDialog(row)">
+                  编辑备注
+                </el-button>
+                <el-divider direction="vertical" />
+                <el-button type="danger" link :icon="Delete" @click="confirmDeleteVersion(row)">
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
       <template #footer>
@@ -107,6 +121,35 @@
         <el-button type="primary" :disabled="!selectedVersionId" :loading="restoring" @click="confirmRestore">
           确认变更
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="remarkVisible"
+      title="编辑备注"
+      width="480px"
+      destroy-on-close
+      align-center
+      @closed="resetRemarkForm"
+    >
+      <el-form label-width="80px" @submit.prevent>
+        <el-form-item label="版本 ID">
+          <el-text>{{ remarkVersionDisplayId || '—' }}</el-text>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="remarkDraft"
+            type="textarea"
+            :rows="3"
+            placeholder="可选，例如本次变更说明"
+            maxlength="200"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="remarkVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingRemark" @click="submitRemark">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -138,6 +181,12 @@ const restoreNeedsTempSnapshot = ref(false);
 const versionDialogTitle = ref('版本变更');
 const versions = ref([]);
 const selectedVersionId = ref('');
+
+const remarkVisible = ref(false);
+const savingRemark = ref(false);
+const remarkVersionId = ref('');
+const remarkVersionDisplayId = ref('');
+const remarkDraft = ref('');
 
 async function loadList() {
   loading.value = true;
@@ -178,6 +227,73 @@ async function openVersionDialog(row) {
 
 function onVersionSelect(row) {
   selectedVersionId.value = row?.id ?? '';
+}
+
+async function reloadVersions() {
+  if (!restoreScriptId.value) return;
+  versionLoading.value = true;
+  try {
+    versions.value = await scriptsApi.listVersions(restoreScriptId.value);
+  } catch (e) {
+    ElMessage.error(e.message || '加载版本列表失败');
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+function openRemarkDialog(row) {
+  remarkVersionId.value = row.id;
+  remarkVersionDisplayId.value = versionDisplayId(row);
+  remarkDraft.value = versionRemark(row);
+  remarkVisible.value = true;
+}
+
+function resetRemarkForm() {
+  remarkVersionId.value = '';
+  remarkVersionDisplayId.value = '';
+  remarkDraft.value = '';
+}
+
+async function submitRemark() {
+  if (!restoreScriptId.value || !remarkVersionId.value) return;
+  savingRemark.value = true;
+  try {
+    await scriptsApi.updateVersionRemark(
+      restoreScriptId.value,
+      remarkVersionId.value,
+      remarkDraft.value
+    );
+    ElMessage.success('备注已更新');
+    remarkVisible.value = false;
+    await reloadVersions();
+  } catch (e) {
+    ElMessage.error(e.message || '更新备注失败');
+  } finally {
+    savingRemark.value = false;
+  }
+}
+
+async function confirmDeleteVersion(row) {
+  const label = versionDisplayId(row) || row.id;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除版本「${label}」？快照文件将一并删除，此操作不可恢复。`,
+      '删除版本',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await scriptsApi.deleteVersion(restoreScriptId.value, row.id);
+    if (selectedVersionId.value === row.id) {
+      selectedVersionId.value = '';
+    }
+    ElMessage.success('已删除');
+    await reloadVersions();
+  } catch (e) {
+    ElMessage.error(e.message || '删除失败');
+  }
 }
 
 async function confirmRestore() {
@@ -237,5 +353,26 @@ onMounted(loadList);
 
 .dialog-alert {
   margin-bottom: 16px;
+}
+
+.version-op-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.version-op-actions :deep(.el-button.is-link) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.version-op-actions :deep(.el-divider--vertical) {
+  margin: 0 2px;
+}
+
+.version-dialog-table :deep(.version-op-col .cell) {
+  white-space: nowrap;
+  overflow: visible;
 }
 </style>

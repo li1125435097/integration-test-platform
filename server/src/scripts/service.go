@@ -332,6 +332,68 @@ func (s *Service) AddVersion(id string, name, remark string) (*Version, error) {
 	return &ver, nil
 }
 
+// UpdateVersionRemark updates the remark on an existing version snapshot.
+func (s *Service) UpdateVersionRemark(id, versionID, remark string) (*Version, error) {
+	var out Version
+	err := s.store.Update(func(f *File) error {
+		for i := range f.Scripts {
+			if f.Scripts[i].ID != id {
+				continue
+			}
+			for j := range f.Scripts[i].Versions {
+				if f.Scripts[i].Versions[j].ID != versionID {
+					continue
+				}
+				f.Scripts[i].Versions[j].Remark = remark
+				out = f.Scripts[i].Versions[j]
+				return nil
+			}
+			return ErrVersionNotFound
+		}
+		return ErrNotFound
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteVersion removes a version snapshot from metadata and deletes its file.
+func (s *Service) DeleteVersion(id, versionID string) error {
+	var fileName string
+	err := s.store.Update(func(f *File) error {
+		for i := range f.Scripts {
+			if f.Scripts[i].ID != id {
+				continue
+			}
+			sc := &f.Scripts[i]
+			idx := -1
+			for j := range sc.Versions {
+				if sc.Versions[j].ID == versionID {
+					idx = j
+					fileName = sc.Versions[j].FileName
+					break
+				}
+			}
+			if idx < 0 {
+				return ErrVersionNotFound
+			}
+			sc.Versions = append(sc.Versions[:idx], sc.Versions[idx+1:]...)
+			return nil
+		}
+		return ErrNotFound
+	})
+	if err != nil {
+		return err
+	}
+	if fileName != "" {
+		if err := os.Remove(s.versionPath(id, fileName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
 // Restore copies a version file over the current script file.
 func (s *Service) Restore(id, versionID string) (*ListItem, error) {
 	var item ListItem

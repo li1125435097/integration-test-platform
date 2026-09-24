@@ -67,3 +67,25 @@ export async function restoreVersion(id, versionId) {
     })
   );
 }
+
+export async function updateVersionRemark(id, versionId, remark = '') {
+  return parseJson(
+    await fetch(
+      `/api/scripts/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remark: remark ?? '' })
+      }
+    )
+  );
+}
+
+export async function deleteVersion(id, versionId) {
+  return parseJson(
+    await fetch(
+      `/api/scripts/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`,
+      { method: 'DELETE' }
+    )
+  );
+}
