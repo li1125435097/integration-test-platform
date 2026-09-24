@@ -17,6 +17,26 @@
 
 需要 **Go 1.22+** 与 **Node.js 18+**（前端构建）。
 
+### 命令菜单（推荐）
+
+仓库根目录提供交互脚本 [`op.sh`](op.sh)，按序号选择常用任务（底层均为 `scripts/*.sh`）：
+
+```bash
+./op.sh
+```
+
+| 序号 | 说明 | 等价命令 |
+|------|------|----------|
+| 1 | 同步前端到 `server/embedded` | `bash scripts/sync-web.sh` |
+| 2 | 开发运行 Go 后端 | `bash scripts/run.sh` |
+| 3 | 前端 Vite 开发服务器 | `bash scripts/dev-web.sh` |
+| 4 | 构建当前平台 | `bash scripts/build.sh build` |
+| 5 | 构建全平台 | `bash scripts/build.sh build-all` |
+| 6 | 发布（全平台 + zip） | `bash scripts/build.sh release` |
+| 7 | 整理 Go 依赖 | `bash scripts/tidy.sh` |
+
+构建类命令会读取 `VERSION`（默认 `git describe`，否则 `0.1.0-dev`），与 [`scripts/build.sh`](scripts/build.sh) 行为一致。
+
 ### 环境要求
 
 - 在仓库根目录工作（存在 `go.mod`）
@@ -37,7 +57,7 @@ go mod download
 或整理并补全依赖：
 
 ```bash
-go mod tidy
+bash scripts/tidy.sh
 ```
 
 `go.sum` 已在仓库中时，一般 `go mod download` 即可。
@@ -109,24 +129,23 @@ npm run build
 开发时可单独启动 Vite（`/api` 代理到 `:8080`）：
 
 ```bash
-cd web
-npm run dev
+bash scripts/dev-web.sh
 ```
 
-浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)，需同时运行 Go 服务。
+浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)，需同时运行 Go 服务（`bash scripts/run.sh` 或 `./op.sh` 选 2）。
 
 ### 启动
 
 在项目根目录（需已执行 `npm run build` 生成 `web/dist`）：
 
 ```bash
-go run ./server -config-dir ./config
+bash scripts/run.sh
 ```
 
 或：
 
 ```bash
-make run
+go run ./server -config-dir ./config
 ```
 
 默认监听 `:8080`，浏览器打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)。
@@ -187,10 +206,12 @@ air init
 发布构建会通过 [`scripts/sync-web.sh`](scripts/sync-web.sh) / [`scripts/sync-web.ps1`](scripts/sync-web.ps1) 在 `web/` 执行 `npm ci && npm run build`，将 `web/dist` 复制到 `server/embedded/web/`，并以 `-tags release` 嵌入二进制：
 
 ```bash
-make build          # 当前操作系统/架构 -> dist/itp-<os>-<arch>[.exe]
-make build-all      # linux / windows / darwin 全平台
-make release        # build-all，并打包 zip（含可执行文件与 config/menu.json）
+bash scripts/build.sh build       # 当前操作系统/架构 -> dist/itp-<os>-<arch>[.exe]
+bash scripts/build.sh build-all   # linux / windows / darwin 全平台
+bash scripts/build.sh release     # build-all，并打包 zip（含可执行文件与 config/menu.json）
 ```
+
+也可使用 `./op.sh` 选择 4–6。
 
 Windows PowerShell：
 
@@ -218,5 +239,6 @@ web/                 前端源码（Vue + Vite）
 config/
   menu.json          菜单 path 校验
   data/              业务数据（如 scripts.json、脚本文件）
-scripts/             sync-web、跨平台构建
+op.sh          交互式命令菜单
+scripts/             run、dev-web、tidy、sync-web、跨平台 build
 ```
