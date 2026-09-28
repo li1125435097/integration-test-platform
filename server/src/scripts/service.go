@@ -2,11 +2,12 @@ package scripts
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,8 +22,8 @@ var (
 
 // Service manages script metadata and files.
 type Service struct {
-	store      *store.Store[File]
-	filesRoot  string
+	store       *store.Store[File]
+	filesRoot   string
 	scriptsPath string
 }
 
@@ -77,12 +78,13 @@ func (s *Service) List() ([]ListItem, error) {
 
 func (sc Script) toListItem() ListItem {
 	return ListItem{
-		ID:             sc.ID,
-		Name:           sc.Name,
-		Description:    sc.Description,
-		Language:       sc.Language,
+		ID:            sc.ID,
+		Name:          sc.Name,
+		Description:   sc.Description,
+		Language:      sc.Language,
 		InterpreterID: sc.InterpreterID,
-		UpdatedAt:      sc.UpdatedAt,
+		UpdatedAt:     sc.UpdatedAt,
+		Files:         fileEntries(effectiveFiles(sc)),
 	}
 }
 
@@ -92,82 +94,116 @@ func (s *Service) listItemFor(sc Script) ListItem {
 	return item
 }
 
-// matchedVersion returns the newest snapshot whose file bytes equal the current script.
+// matchedVersion returns the newest snapshot that matches the current workspace.
 func (s *Service) matchedVersion(sc Script) string {
-	current, err := os.ReadFile(s.currentPath(sc.ID, sc.FileName))
+	locals, err := s.localBytes(sc)
 	if err != nil {
 		return ""
 	}
+	currentMeta := effectiveFiles(sc)
+	hasExtraLocal := false
+	for _, f := range currentMeta {
+		if f.Kind == FileKindLocal {
+			hasExtraLocal = true
+			break
+		}
+	}
+	mainName, _ := MainFileName(sc.Language)
+
 	for i := len(sc.Versions) - 1; i >= 0; i-- {
 		v := sc.Versions[i]
+		if s.snapshotIsDir(sc.ID, v) {
+			man, err := s.readManifest(sc.ID, v)
+			if err != nil || !fileMetaEqual(currentMeta, man.Files) {
+				continue
+			}
+			match := true
+			for _, f := range man.Files {
+				if f.Kind == FileKindRef {
+					continue
+				}
+				snap, err := os.ReadFile(filepath.Join(s.versionPath(sc.ID, v.FileName), f.Name))
+				if err != nil || !bytes.Equal(snap, locals[f.Name]) {
+					match = false
+					break
+				}
+			}
+			if match {
+				return v.ID
+			}
+			continue
+		}
+		if hasExtraLocal {
+			continue
+		}
 		snap, err := os.ReadFile(s.versionPath(sc.ID, v.FileName))
 		if err != nil {
 			continue
 		}
-		if bytes.Equal(current, snap) {
+		if bytes.Equal(snap, locals[mainName]) {
 			return v.ID
 		}
 	}
 	return ""
 }
 
-// Get returns metadata and current file content.
+// Get returns metadata and current workspace content.
 func (s *Service) Get(id string) (*Detail, error) {
-	sc, err := s.findScript(id)
+	all, err := s.loadAll()
 	if err != nil {
 		return nil, err
 	}
-	content, err := os.ReadFile(s.currentPath(id, sc.FileName))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			content = []byte{}
-		} else {
-			return nil, err
-		}
+	sc := findScriptIn(all, id)
+	if sc == nil {
+		return nil, ErrNotFound
 	}
-	d := &Detail{
-		ListItem: s.listItemFor(*sc),
-		Content:  string(content),
-	}
-	return d, nil
+	return s.detailFor(*sc, all), nil
 }
 
 type CreateInput struct {
 	Name          string
-	Description     string
-	Language        string
-	Content         string
-	InterpreterID   string
+	Description   string
+	Language      string
+	Content       string
+	InterpreterID string
+	Files         []FileInput
 }
 
-// Create adds a new script with initial file content.
+// Create adds a new script with initial workspace files.
 func (s *Service) Create(in CreateInput) (*Detail, error) {
 	if in.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	ext, err := ExtForLanguage(in.Language)
+	prepared, err := PrepareFileInputs(in.Language, in.Content, in.Files)
+	if err != nil {
+		return nil, err
+	}
+	all, err := s.loadAll()
 	if err != nil {
 		return nil, err
 	}
 	id := uuid.NewString()
-	fileName := "current." + ext
-	dir := s.scriptDir(id)
-	if err := os.MkdirAll(filepath.Join(dir, "versions"), 0o755); err != nil {
+	if err := validateRefsForLanguage(all, id, in.Language, prepared); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(s.currentPath(id, fileName), []byte(in.Content), 0o644); err != nil {
+	mainName, err := MainFileName(in.Language)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.writeOwnedFiles(id, prepared); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	sc := Script{
-		ID:             id,
-		Name:           in.Name,
-		Description:    in.Description,
-		Language:       in.Language,
+		ID:            id,
+		Name:          in.Name,
+		Description:   in.Description,
+		Language:      in.Language,
 		InterpreterID: in.InterpreterID,
-		FileName:       fileName,
-		UpdatedAt:      now,
-		Versions:       []Version{},
+		FileName:      mainName,
+		Files:         metaFromInputs(prepared),
+		UpdatedAt:     now,
+		Versions:      []Version{},
 	}
 	if err := s.store.Update(func(f *File) error {
 		f.Scripts = append(f.Scripts, sc)
@@ -175,29 +211,35 @@ func (s *Service) Create(in CreateInput) (*Detail, error) {
 	}); err != nil {
 		return nil, err
 	}
-	return &Detail{ListItem: s.listItemFor(sc), Content: in.Content}, nil
+	all = append(all, sc)
+	return s.detailFor(sc, all), nil
 }
 
 type UpdateInput struct {
 	Name          string
-	Description     string
-	Language        string
-	Content         string
-	InterpreterID   string
+	Description   string
+	Language      string
+	Content       string
+	InterpreterID string
+	Files         []FileInput
 }
 
-// Update saves metadata and current file; renames current file if language changes.
+// Update saves metadata and workspace files.
 func (s *Service) Update(id string, in UpdateInput) (*Detail, error) {
 	if in.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	ext, err := ExtForLanguage(in.Language)
+	prepared, err := PrepareFileInputs(in.Language, in.Content, in.Files)
 	if err != nil {
 		return nil, err
 	}
-	newFileName := "current." + ext
+	mainName, err := MainFileName(in.Language)
+	if err != nil {
+		return nil, err
+	}
 
 	var updated Script
+	var all []Script
 	err = s.store.Update(func(f *File) error {
 		idx := -1
 		for i := range f.Scripts {
@@ -209,30 +251,28 @@ func (s *Service) Update(id string, in UpdateInput) (*Detail, error) {
 		if idx < 0 {
 			return ErrNotFound
 		}
+		if err := validateRefsForLanguage(f.Scripts, id, in.Language, prepared); err != nil {
+			return err
+		}
+		if err := s.writeOwnedFiles(id, prepared); err != nil {
+			return err
+		}
 		sc := &f.Scripts[idx]
-		oldPath := s.currentPath(id, sc.FileName)
 		sc.Name = in.Name
 		sc.Description = in.Description
 		sc.Language = in.Language
 		sc.InterpreterID = in.InterpreterID
+		sc.FileName = mainName
+		sc.Files = metaFromInputs(prepared)
 		sc.UpdatedAt = time.Now().UTC()
-		if sc.FileName != newFileName {
-			newPath := s.currentPath(id, newFileName)
-			if err := moveFile(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			sc.FileName = newFileName
-		}
-		if err := os.WriteFile(s.currentPath(id, sc.FileName), []byte(in.Content), 0o644); err != nil {
-			return err
-		}
 		updated = *sc
+		all = append([]Script(nil), f.Scripts...)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &Detail{ListItem: s.listItemFor(updated), Content: in.Content}, nil
+	return s.detailFor(updated, all), nil
 }
 
 // Delete removes a script from metadata and deletes its on-disk files.
@@ -255,25 +295,17 @@ func (s *Service) Delete(id string) error {
 	return nil
 }
 
-func moveFile(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-	return copyFile(src, dst)
-}
-
 func (s *Service) findScript(id string) (*Script, error) {
 	f, err := s.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	for i := range f.Scripts {
-		if f.Scripts[i].ID == id {
-			sc := f.Scripts[i]
-			return &sc, nil
-		}
+	sc := findScriptIn(f.Scripts, id)
+	if sc == nil {
+		return nil, ErrNotFound
 	}
-	return nil, ErrNotFound
+	cp := *sc
+	return &cp, nil
 }
 
 // ListVersions returns version metadata for a script.
@@ -287,31 +319,46 @@ func (s *Service) ListVersions(id string) ([]Version, error) {
 	return out, nil
 }
 
-// AddVersion copies the current script file into versions/.
+// AddVersion copies the current workspace into versions/{name}/.
 func (s *Service) AddVersion(id string, name, remark string) (*Version, error) {
 	if name == "" {
 		name = time.Now().UTC().Format("20060102150405")
+	}
+	if err := validateFileNameLoose(name); err != nil {
+		return nil, err
 	}
 	sc, err := s.findScript(id)
 	if err != nil {
 		return nil, err
 	}
-	ext, err := ExtForLanguage(sc.Language)
+	dstDir := s.versionPath(id, name)
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return nil, err
+	}
+	meta := effectiveFiles(*sc)
+	man := versionManifest{Files: meta}
+	data, err := json.MarshalIndent(man, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	versionFileName := name + "." + ext
-	src := s.currentPath(id, sc.FileName)
-	dst := s.versionPath(id, versionFileName)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dstDir, "manifest.json"), append(data, '\n'), 0o644); err != nil {
 		return nil, err
 	}
-	if err := copyFile(src, dst); err != nil {
-		return nil, err
+	for _, f := range meta {
+		if f.Kind == FileKindRef {
+			continue
+		}
+		text, err := s.readOwnedContent(*sc, f.Name)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, f.Name), []byte(text), 0o644); err != nil {
+			return nil, err
+		}
 	}
 	ver := Version{
 		ID:        name,
-		FileName:  versionFileName,
+		FileName:  name,
 		Remark:    remark,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -330,9 +377,17 @@ func (s *Service) AddVersion(id string, name, remark string) (*Version, error) {
 		}
 		return ErrNotFound
 	}); err != nil {
+		_ = os.RemoveAll(dstDir)
 		return nil, err
 	}
 	return &ver, nil
+}
+
+func validateFileNameLoose(name string) error {
+	if name == "" || !fileNameRe.MatchString(name) || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid version id %q", name)
+	}
+	return nil
 }
 
 // UpdateVersionRemark updates the remark on an existing version snapshot.
@@ -361,7 +416,7 @@ func (s *Service) UpdateVersionRemark(id, versionID, remark string) (*Version, e
 	return &out, nil
 }
 
-// DeleteVersion removes a version snapshot from metadata and deletes its file.
+// DeleteVersion removes a version snapshot from metadata and deletes its files.
 func (s *Service) DeleteVersion(id, versionID string) error {
 	var fileName string
 	err := s.store.Update(func(f *File) error {
@@ -389,15 +444,30 @@ func (s *Service) DeleteVersion(id, versionID string) error {
 	if err != nil {
 		return err
 	}
-	if fileName != "" {
-		if err := os.Remove(s.versionPath(id, fileName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if fileName == "" {
+		return nil
+	}
+	p := s.versionPath(id, fileName)
+	fi, statErr := os.Stat(p)
+	if statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		return statErr
+	}
+	if fi.IsDir() {
+		if err := os.RemoveAll(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		return nil
+	}
+	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
 
-// Restore copies a version file over the current script file.
+// Restore copies a version snapshot over the current workspace.
 func (s *Service) Restore(id, versionID string) (*ListItem, error) {
 	var item ListItem
 	err := s.store.Update(func(f *File) error {
@@ -423,9 +493,54 @@ func (s *Service) Restore(id, versionID string) (*ListItem, error) {
 			return ErrVersionNotFound
 		}
 		src := s.versionPath(id, ver.FileName)
-		dst := s.currentPath(id, sc.FileName)
-		if err := copyFile(src, dst); err != nil {
+		fi, err := os.Stat(src)
+		if err != nil {
 			return err
+		}
+		if fi.IsDir() {
+			man, err := s.readManifest(id, *ver)
+			if err != nil {
+				return err
+			}
+			inputs := make([]FileInput, 0, len(man.Files))
+			for _, mf := range man.Files {
+				in := FileInput{
+					Name:           mf.Name,
+					Kind:           mf.Kind,
+					SourceScriptID: mf.SourceScriptID,
+					SourceFileName: mf.SourceFileName,
+				}
+				if mf.Kind != FileKindRef {
+					b, err := os.ReadFile(filepath.Join(src, mf.Name))
+					if err != nil && !errors.Is(err, os.ErrNotExist) {
+						return err
+					}
+					in.Content = string(b)
+				}
+				inputs = append(inputs, in)
+			}
+			if err := s.writeOwnedFiles(id, inputs); err != nil {
+				return err
+			}
+			sc.Files = man.Files
+			if mainName, err := MainFileName(sc.Language); err == nil {
+				sc.FileName = mainName
+			}
+		} else {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				return err
+			}
+			mainName, err := MainFileName(sc.Language)
+			if err != nil {
+				return err
+			}
+			inputs := []FileInput{{Name: mainName, Kind: FileKindMain, Content: string(b)}}
+			if err := s.writeOwnedFiles(id, inputs); err != nil {
+				return err
+			}
+			sc.Files = metaFromInputs(inputs)
+			sc.FileName = mainName
 		}
 		sc.UpdatedAt = time.Now().UTC()
 		item = s.listItemFor(*sc)
@@ -435,21 +550,4 @@ func (s *Service) Restore(id, versionID string) (*ListItem, error) {
 		return nil, err
 	}
 	return &item, nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
 }

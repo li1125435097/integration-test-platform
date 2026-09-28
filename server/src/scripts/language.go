@@ -15,3 +15,12 @@ func ExtForLanguage(lang string) (string, error) {
 		return "", fmt.Errorf("unsupported language %q", lang)
 	}
 }
+
+// MainFileName is the workspace entry file for a language (e.g. main.js).
+func MainFileName(lang string) (string, error) {
+	ext, err := ExtForLanguage(lang)
+	if err != nil {
+		return "", err
+	}
+	return "main." + ext, nil
+}

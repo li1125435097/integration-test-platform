@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "npm run dev --prefix web",
     "server": "air",
+    "start": ".\\dist\\itp-windows-amd64.exe",
     "build": "npm run build --prefix web",
     "preview": "npm run preview --prefix web"
   }

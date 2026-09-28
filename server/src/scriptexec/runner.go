@@ -48,6 +48,7 @@ type PreviewInput struct {
 	Language      string
 	InterpreterID string
 	Content       string
+	Files         []scripts.FileInput
 }
 
 // Output is the result of a script run.
@@ -66,67 +67,74 @@ func (r *Runner) RunPreview(in PreviewInput) *Output {
 	if in.Language == "" {
 		in.Language = "javascript"
 	}
-	return r.execute(in.Language, in.InterpreterID, in.Content, "", "", false)
+	mainName, files, err := r.Scripts.ResolveFiles("", in.Language, in.Content, in.Files)
+	if err != nil {
+		return &Output{Error: err.Error(), ExitCode: -1}
+	}
+	return r.execute(in.Language, in.InterpreterID, mainName, files, "", "", false)
 }
 
 // RunSaved executes the on-disk script and persists an execution record.
 func (r *Runner) RunSaved(scriptID string) *Output {
-	detail, err := r.Scripts.Get(scriptID)
+	language, interpreterID, name, mainName, files, err := r.Scripts.ResolveSaved(scriptID)
 	if err != nil {
-		return &Output{Error: err.Error()}
+		out := &Output{Error: err.Error(), ExitCode: -1}
+		if errors.Is(err, scripts.ErrNotFound) {
+			return out
+		}
+		rec := r.saveRecord(scriptID, name, language, interpreterID, out, time.Now())
+		if rec != nil {
+			out.RecordID = rec.ID
+		}
+		return out
 	}
-	return r.execute(detail.Language, detail.InterpreterID, detail.Content, scriptID, detail.Name, true)
+	return r.execute(language, interpreterID, mainName, files, scriptID, name, true)
 }
 
-func (r *Runner) execute(language, interpreterID, content, scriptID, scriptName string, persist bool) *Output {
+func (r *Runner) execute(language, interpreterID, mainName string, files []scripts.WorkspaceFile, scriptID, scriptName string, persist bool) *Output {
 	start := time.Now()
 	out := &Output{}
 
+	fail := func(msg string) *Output {
+		out.Error = msg
+		out.DurationMs = time.Since(start).Milliseconds()
+		if persist {
+			rec := r.saveRecord(scriptID, scriptName, language, interpreterID, out, start)
+			if rec != nil {
+				out.RecordID = rec.ID
+			}
+		}
+		return out
+	}
+
 	interp, err := r.resolveInterpreter(language, interpreterID)
 	if err != nil {
-		out.Error = err.Error()
-		out.DurationMs = time.Since(start).Milliseconds()
-		if persist {
-			r.saveRecord(scriptID, scriptName, language, interpreterID, out, start)
-		}
-		return out
+		return fail(err.Error())
+	}
+	if mainName == "" {
+		return fail("main file is missing")
 	}
 
-	ext, err := scripts.ExtForLanguage(language)
-	if err != nil {
-		out.Error = err.Error()
-		out.DurationMs = time.Since(start).Milliseconds()
-		if persist {
-			r.saveRecord(scriptID, scriptName, language, interpreterID, out, start)
+	tmpDir := filepath.Join(r.tempRoot, uuid.NewString())
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return fail(err.Error())
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	for _, f := range files {
+		p := filepath.Join(tmpDir, f.Name)
+		if err := os.WriteFile(p, []byte(f.Content), 0o600); err != nil {
+			return fail(err.Error())
 		}
-		return out
 	}
 
-	if err := os.MkdirAll(r.tempRoot, 0o755); err != nil {
-		out.Error = err.Error()
-		out.DurationMs = time.Since(start).Milliseconds()
-		if persist {
-			r.saveRecord(scriptID, scriptName, language, interpreterID, out, start)
-		}
-		return out
-	}
-
-	tmpPath := filepath.Join(r.tempRoot, uuid.NewString()+"."+ext)
-	if err := os.WriteFile(tmpPath, []byte(content), 0o600); err != nil {
-		out.Error = err.Error()
-		out.DurationMs = time.Since(start).Milliseconds()
-		if persist {
-			r.saveRecord(scriptID, scriptName, language, interpreterID, out, start)
-		}
-		return out
-	}
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	args := append(append([]string{}, interp.DefaultArgs...), tmpPath)
+	mainPath := filepath.Join(tmpDir, mainName)
+	args := append(append([]string{}, interp.DefaultArgs...), mainPath)
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, interp.Path, args...)
+	cmd.Dir = tmpDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -34,10 +34,36 @@ func RegisterScripts(r *gin.Engine, svc *scripts.Service, runner *scriptexec.Run
 	g.POST("/:id/run", h.RunSaved)
 }
 
+type fileBody struct {
+	Name           string `json:"name"`
+	Kind           string `json:"kind"`
+	Content        string `json:"content"`
+	SourceScriptID string `json:"sourceScriptId"`
+	SourceFileName string `json:"sourceFileName"`
+}
+
 type runPreviewBody struct {
-	Language      string `json:"language"`
-	InterpreterID string `json:"interpreterId"`
-	Content       string `json:"content"`
+	Language      string     `json:"language"`
+	InterpreterID string     `json:"interpreterId"`
+	Content       string     `json:"content"`
+	Files         []fileBody `json:"files"`
+}
+
+func toFileInputs(files []fileBody) []scripts.FileInput {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]scripts.FileInput, 0, len(files))
+	for _, f := range files {
+		out = append(out, scripts.FileInput{
+			Name:           f.Name,
+			Kind:           f.Kind,
+			Content:        f.Content,
+			SourceScriptID: f.SourceScriptID,
+			SourceFileName: f.SourceFileName,
+		})
+	}
+	return out
 }
 
 func (h Scripts) RunPreview(c *gin.Context) {
@@ -57,6 +83,7 @@ func (h Scripts) RunPreview(c *gin.Context) {
 		Language:      body.Language,
 		InterpreterID: body.InterpreterID,
 		Content:       body.Content,
+		Files:         toFileInputs(body.Files),
 	})
 	c.JSON(http.StatusOK, out)
 }
@@ -91,11 +118,12 @@ func (h Scripts) List(c *gin.Context) {
 }
 
 type scriptBody struct {
-	Name          string `json:"name"`
-	Description     string `json:"description"`
-	Language        string `json:"language"`
-	Content         string `json:"content"`
-	InterpreterID   string `json:"interpreterId"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Language      string     `json:"language"`
+	Content       string     `json:"content"`
+	InterpreterID string     `json:"interpreterId"`
+	Files         []fileBody `json:"files"`
 }
 
 func (h Scripts) Create(c *gin.Context) {
@@ -109,10 +137,11 @@ func (h Scripts) Create(c *gin.Context) {
 	}
 	detail, err := h.Svc.Create(scripts.CreateInput{
 		Name:          body.Name,
-		Description:     body.Description,
-		Language:        body.Language,
-		Content:         body.Content,
-		InterpreterID:   body.InterpreterID,
+		Description:   body.Description,
+		Language:      body.Language,
+		Content:       body.Content,
+		InterpreterID: body.InterpreterID,
+		Files:         toFileInputs(body.Files),
 	})
 	if err != nil {
 		writeScriptError(c, err)
@@ -143,10 +172,11 @@ func (h Scripts) Update(c *gin.Context) {
 	}
 	detail, err := h.Svc.Update(id, scripts.UpdateInput{
 		Name:          body.Name,
-		Description:     body.Description,
-		Language:        body.Language,
-		Content:         body.Content,
-		InterpreterID:   body.InterpreterID,
+		Description:   body.Description,
+		Language:      body.Language,
+		Content:       body.Content,
+		InterpreterID: body.InterpreterID,
+		Files:         toFileInputs(body.Files),
 	})
 	if err != nil {
 		writeScriptError(c, err)

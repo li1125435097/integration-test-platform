@@ -87,7 +87,7 @@ func main() {
 	})
 	r.StaticFS("/assets", webAssets.SubFS("assets"))
 
-	log.Printf("integration-test-platform %s listening on %s (config: %s)", version, cfg.Addr, configDir)
+	log.Printf("integration-test-platform %s listening on http://localhost%s (config: %s)", version, cfg.Addr, configDir)
 	if err := r.Run(cfg.Addr); err != nil {
 		log.Fatal(err)
 	}
