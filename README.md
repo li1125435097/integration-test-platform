@@ -17,9 +17,20 @@
 
 需要 **Go 1.22+** 与 **Node.js 18+**（前端构建）。
 
-### 命令菜单（推荐）
+### 根目录快捷命令（npm 与 `op.sh`）
 
-仓库根目录提供交互脚本 [`op.sh`](op.sh)，按序号选择常用任务（底层均为 `scripts/*.sh`）：
+在仓库根目录触发常用开发任务时，可用 **`npm run …`**（[`package.json`](package.json)）或交互式 **[`op.sh`](op.sh)**。**二者在重叠场景下是替代品，任选其一即可**；`op.sh` 还覆盖同步嵌入、跨平台/发布构建、整理 Go 依赖等 npm 未封装的操作。
+
+**npm（需先在 `web/` 执行 `npm install`）**
+
+```bash
+npm run dev       # Vite 开发服务器，/api 代理到 :8080
+npm run build     # 构建 web/dist
+npm run preview   # 预览生产构建
+npm run server    # Air 监听 Go 源码并重启（需已安装 air，见下文「热更新」）
+```
+
+**`op.sh`（底层均为 `scripts/*.sh`）**
 
 ```bash
 ./op.sh
@@ -35,7 +46,16 @@
 | 6 | 发布（全平台 + zip） | `bash scripts/build.sh release` |
 | 7 | 整理 Go 依赖 | `bash scripts/tidy.sh` |
 
-构建类命令会读取 `VERSION`（默认 `git describe`，否则 `0.1.0-dev`），与 [`scripts/build.sh`](scripts/build.sh) 行为一致。
+**可互换对照**（同一任务，二选一）：
+
+| 任务 | npm | `op.sh` |
+|------|-----|---------|
+| 前端 Vite 开发 | `npm run dev` | 选 **3** |
+| 构建 `web/dist` | `npm run build` | 无单独项（发布流程见 **1** / **4–6**） |
+| Go 后端（普通运行） | — | 选 **2** |
+| Go 后端（Air 热重载） | `npm run server` | — |
+
+`op.sh` 中构建类命令会读取 `VERSION`（默认 `git describe`，否则 `0.1.0-dev`），与 [`scripts/build.sh`](scripts/build.sh) 行为一致。
 
 ### 环境要求
 
@@ -126,13 +146,9 @@ npm run build
 
 构建输出在 `web/dist/`，Go 开发模式会从这里提供静态资源。
 
-开发时可单独启动 Vite（`/api` 代理到 `:8080`）：
+开发时可单独启动 Vite（`/api` 代理到 `:8080`）：根目录 `npm run dev`，或 `./op.sh` 选 **3**（等同 `bash scripts/dev-web.sh`）。
 
-```bash
-bash scripts/dev-web.sh
-```
-
-浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)，需同时运行 Go 服务（`bash scripts/run.sh` 或 `./op.sh` 选 2）。
+浏览器访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)，需同时运行 Go 服务（`./op.sh` 选 **2**，或 `bash scripts/run.sh`）。
 
 ### 启动
 
@@ -150,7 +166,7 @@ go run ./server -config-dir ./config
 
 默认监听 `:8080`，浏览器打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)。
 
-改 Vue 源码后需重新 `npm run build`，再刷新 `:8080`；或使用 `npm run dev` + API 代理进行前端热更新。
+改 Vue 源码后需重新 `npm run build`（根目录或 `web/` 均可），再刷新 `:8080`；或在根目录 `npm run dev` + 同时运行 Go 服务，进行前端热更新。
 
 可选参数：
 
@@ -166,7 +182,7 @@ go run ./server -config-dir ./config -addr :8080
 
 前端改动请任选其一：
 
-- 在 `web/` 运行 `npm run dev`（推荐，HMR）
+- 在仓库根目录 `npm run dev`（推荐，HMR；等同在 `web/` 运行 `npm run dev`）
 - 或修改后执行 `npm run build`，再刷新浏览器
 
 国内安装前先设置模块代理（与上文相同，推荐 goproxy.cn）：
@@ -211,7 +227,7 @@ bash scripts/build.sh build-all   # linux / windows / darwin 全平台
 bash scripts/build.sh release     # build-all，并打包 zip（含可执行文件与 config/menu.json）
 ```
 
-也可使用 `./op.sh` 选择 4–6。
+也可使用 `./op.sh` 选 **4–6**（与直接执行上表 `build.sh` 命令等价；仅构建 `web/dist` 时用根目录 `npm run build`）。
 
 Windows PowerShell：
 
@@ -239,6 +255,7 @@ web/                 前端源码（Vue + Vite）
 config/
   menu.json          菜单 path 校验
   data/              业务数据（如 scripts.json、脚本文件）
-op.sh          交互式命令菜单
+package.json     根目录 npm 脚本（与 op.sh 部分任务可互换）
+op.sh                交互式命令菜单（与 npm 部分任务可互换）
 scripts/             run、dev-web、tidy、sync-web、跨平台 build
 ```
