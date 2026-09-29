@@ -15,6 +15,26 @@ body {
   font-family: var(--el-font-family);
   background-color: var(--el-bg-color-page);
   color: var(--el-text-color-primary);
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--el-border-color);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--el-border-color-darker);
 }
 
 .page-fill {

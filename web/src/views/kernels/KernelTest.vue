@@ -1,136 +1,136 @@
 <template>
   <div class="page-block">
-    <el-row>
-      <el-text tag="h2" size="large">内核测试</el-text>
-    </el-row>
+    <div class="page-header">
+      <el-row>
+        <el-text tag="h2" size="large">内核测试</el-text>
+      </el-row>
+    </div>
 
     <el-card shadow="hover" class="page-card">
-      <template #header>
-        <el-row justify="space-between" align="middle">
-          <el-text type="info">扫描本机 AppData\Roaming 下开发、测试、生产目录中的内核</el-text>
-          <el-button :icon="Refresh" circle :loading="kernelLoading" @click="loadKernels" />
-        </el-row>
-      </template>
-
       <el-form label-width="88px" @submit.prevent>
-        <el-form-item label="来源">
-          <div class="source-row">
-            <el-checkbox
-              :model-value="allSourcesChecked"
-              :indeterminate="sourcesIndeterminate"
-              @change="onAllSourcesChange"
-            >
-              全部
-            </el-checkbox>
-            <el-checkbox-group v-model="sources">
-              <el-checkbox value="dev">开发</el-checkbox>
-              <el-checkbox value="test">测试</el-checkbox>
-              <el-checkbox value="prod">生产</el-checkbox>
-            </el-checkbox-group>
+        <section class="form-section">
+          <div class="form-section-header">
+            <el-text type="info">内核选择（扫描本机 AppData\Roaming 下开发、测试、生产目录中的内核）</el-text>
+            <el-button :icon="Refresh" circle :loading="kernelLoading" @click="loadKernels" />
           </div>
-        </el-form-item>
-        <el-form-item label="内核">
-          <el-select
-            v-model="selectedKernels"
-            multiple
-            filterable
-            clearable
-            placeholder="选择内核"
-            no-data-text="当前来源下没有内核"
-            :loading="kernelLoading"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="item in filteredKernels"
-              :key="item.path"
-              :label="item.name"
-              :value="item.path"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-card shadow="hover" class="page-card">
-      <template #header>
-        <el-text type="info">选择预设启动参数，或追加自定义参数</el-text>
-      </template>
-
-      <el-form label-width="88px" @submit.prevent>
-        <el-form-item label="预设参数">
-          <el-select
-            v-model="selectedFlags"
-            multiple
-            filterable
-            clearable
-            placeholder="选择启动参数"
-            style="width: 100%"
-          >
-            <el-option v-for="flag in launchFlags" :key="flag" :label="flag" :value="flag" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="自定义">
-          <div class="args-editor">
-            <div v-for="(_, index) in customFlags" :key="index" class="args-row">
-              <el-input v-model="customFlags[index]" placeholder="输入自定义启动参数" clearable />
-              <el-button type="danger" link :icon="Delete" @click="removeCustomFlag(index)">删除</el-button>
+          <el-form-item label="来源">
+            <div class="source-row">
+              <el-checkbox
+                :model-value="allSourcesChecked"
+                :indeterminate="sourcesIndeterminate"
+                @change="onAllSourcesChange"
+              >
+                全部
+              </el-checkbox>
+              <el-checkbox-group v-model="sources">
+                <el-checkbox value="dev">开发</el-checkbox>
+                <el-checkbox value="test">测试</el-checkbox>
+                <el-checkbox value="prod">生产</el-checkbox>
+              </el-checkbox-group>
             </div>
-            <el-button type="primary" link :icon="Plus" @click="addCustomFlag">添加参数</el-button>
+          </el-form-item>
+          <el-form-item label="内核">
+            <el-select
+              v-model="selectedKernels"
+              multiple
+              filterable
+              clearable
+              placeholder="选择内核"
+              no-data-text="当前来源下没有内核"
+              :loading="kernelLoading"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in filteredKernels"
+                :key="item.path"
+                :label="item.name"
+                :value="item.path"
+              />
+            </el-select>
+          </el-form-item>
+        </section>
+
+        <el-divider />
+
+        <section class="form-section">
+          <div class="form-section-header">
+            <el-text type="info">启动参数选择（选择预设启动参数，或追加自定义参数）</el-text>
           </div>
-        </el-form-item>
-      </el-form>
-    </el-card>
+          <el-form-item label="预设参数">
+            <el-select
+              v-model="selectedFlags"
+              multiple
+              filterable
+              clearable
+              placeholder="选择启动参数"
+              style="width: 100%"
+            >
+              <el-option v-for="flag in launchFlags" :key="flag" :label="flag" :value="flag" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="自定义">
+            <div class="args-editor">
+              <div v-for="(_, index) in customFlags" :key="index" class="args-row">
+                <el-input v-model="customFlags[index]" placeholder="输入自定义启动参数" clearable />
+                <el-button type="danger" link :icon="Delete" @click="removeCustomFlag(index)">删除</el-button>
+              </div>
+              <el-button type="primary" link :icon="Plus" @click="addCustomFlag">添加参数</el-button>
+            </div>
+          </el-form-item>
+        </section>
 
-    <el-card shadow="hover" class="page-card">
-      <template #header>
-        <el-row justify="space-between" align="middle">
-          <el-space>
-            <el-text type="info">指纹文件</el-text>
-            <el-button :icon="FolderOpened" @click="pickFingerprint">浏览</el-button>
-            <el-text type="info" size="small">{{ fingerprintFileName || '内置示例' }}</el-text>
-          </el-space>
-          <el-switch
-            v-model="treeMode"
-            inline-prompt
-            active-text="树形"
-            inactive-text="编辑"
-            :before-change="guardTreeMode"
+        <el-divider />
+
+        <section class="form-section">
+          <div class="form-section-header">
+            <el-space>
+              <el-text type="info">指纹选择（选择指纹文件，或内置示例）</el-text>
+              <el-button :icon="FolderOpened" @click="pickFingerprint">打开</el-button>
+              <el-text type="info" size="small">{{ fingerprintFileName || '内置示例' }}</el-text>
+            </el-space>
+            <el-switch
+              v-model="treeMode"
+              inline-prompt
+              active-text="树形"
+              inactive-text="编辑"
+              :before-change="guardTreeMode"
+            />
+          </div>
+          <input
+            ref="fileInput"
+            class="file-input"
+            type="file"
+            accept="application/json,.json"
+            @change="onFingerprintFile"
           />
-        </el-row>
-      </template>
-
-      <input
-        ref="fileInput"
-        class="file-input"
-        type="file"
-        accept="application/json,.json"
-        @change="onFingerprintFile"
-      />
-
-      <el-input
-        v-show="!treeMode"
-        v-model="fingerprintText"
-        type="textarea"
-        :rows="18"
-        resize="vertical"
-        class="fingerprint-editor"
-        placeholder="指纹 JSON"
-      />
-      <div v-show="treeMode" class="fingerprint-tree">
-        <el-tree
-          :data="treeNodes"
-          node-key="id"
-          :props="{ label: 'label', children: 'children' }"
-          :expand-on-click-node="true"
-        >
-          <template #default="{ data }">
-            <span class="tree-label">
-              <span class="tree-key">{{ data.label }}</span>
-              <span class="tree-summary">{{ data.summary }}</span>
-            </span>
-          </template>
-        </el-tree>
-      </div>
+          <el-form-item label="内容">
+            <el-input
+              v-show="!treeMode"
+              v-model="fingerprintText"
+              type="textarea"
+              :rows="18"
+              resize="vertical"
+              class="fingerprint-editor"
+              placeholder="指纹 JSON"
+            />
+            <div v-show="treeMode" class="fingerprint-tree">
+              <el-tree
+                :data="treeNodes"
+                node-key="id"
+                :props="{ label: 'label', children: 'children' }"
+                :expand-on-click-node="true"
+              >
+                <template #default="{ data }">
+                  <span class="tree-label">
+                    <span class="tree-key">{{ data.label }}</span>
+                    <span class="tree-summary">{{ data.summary }}</span>
+                  </span>
+                </template>
+              </el-tree>
+            </div>
+          </el-form-item>
+        </section>
+      </el-form>
     </el-card>
   </div>
 </template>
@@ -330,10 +330,41 @@ onMounted(loadKernels);
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+}
+
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-bottom: 16px;
+  margin-bottom: 0;
+  background: var(--el-bg-color-page);
 }
 
 .page-card {
   border-radius: var(--el-border-radius-base);
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.form-section :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.form-section :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 
 .source-row {
