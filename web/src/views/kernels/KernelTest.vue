@@ -85,48 +85,83 @@
           <div class="form-section-header">
             <el-space>
               <el-text type="info">指纹选择（选择指纹文件，或内置示例）</el-text>
-              <el-button :icon="FolderOpened" @click="pickFingerprint">打开</el-button>
+              <el-button :icon="FolderOpened" :disabled="fingerprintBusy" @click="pickFingerprint">打开</el-button>
               <el-text type="info" size="small">{{ fingerprintFileName || '内置示例' }}</el-text>
             </el-space>
-            <el-switch
-              v-model="treeMode"
-              inline-prompt
-              active-text="树形"
-              inactive-text="编辑"
-              :before-change="guardTreeMode"
-            />
+            <el-space>
+              <el-switch
+                v-model="cipherMode"
+                inline-prompt
+                active-text="密文"
+                inactive-text="明文"
+                :disabled="saving"
+                :before-change="guardCipherMode"
+              />
+              <el-switch
+                v-model="treeMode"
+                inline-prompt
+                active-text="树形"
+                inactive-text="编辑"
+                :disabled="cipherMode || fingerprintBusy"
+                :before-change="guardTreeMode"
+              />
+              <el-button type="primary" :loading="saving" :disabled="fingerprintBusy" @click="saveFingerprint">
+                保存
+              </el-button>
+            </el-space>
           </div>
-          <input
-            ref="fileInput"
-            class="file-input"
-            type="file"
-            accept="application/json,.json"
-            @change="onFingerprintFile"
-          />
+          <el-form-item label="baseUrl">
+            <el-input v-model="baseUrl" clearable placeholder="指纹加密 baseUrl" />
+          </el-form-item>
+          <el-form-item label="Bearer">
+            <el-input v-model="bearer" clearable placeholder="指纹加密 Bearer" />
+          </el-form-item>
+          <input ref="fileInput" class="file-input" type="file" @change="onFingerprintFile" />
           <el-form-item label="内容">
-            <el-input
-              v-show="!treeMode"
-              v-model="fingerprintText"
-              type="textarea"
-              :rows="18"
-              resize="vertical"
-              class="fingerprint-editor"
-              placeholder="指纹 JSON"
-            />
-            <div v-show="treeMode" class="fingerprint-tree">
-              <el-tree
-                :data="treeNodes"
-                node-key="id"
-                :props="{ label: 'label', children: 'children' }"
-                :expand-on-click-node="true"
-              >
-                <template #default="{ data }">
-                  <span class="tree-label">
-                    <span class="tree-key">{{ data.label }}</span>
-                    <span class="tree-summary">{{ data.summary }}</span>
-                  </span>
-                </template>
-              </el-tree>
+            <div class="fingerprint-body">
+              <aside class="fingerprint-files">
+                <el-text size="small" type="info">已保存</el-text>
+                <el-scrollbar class="fingerprint-file-scroll">
+                  <button
+                    v-for="item in savedFiles"
+                    :key="item.name"
+                    type="button"
+                    class="fingerprint-file"
+                    :class="{ active: item.name === activeSavedName }"
+                    :disabled="fingerprintBusy"
+                    @click="openSaved(item.name)"
+                  >
+                    {{ item.name }}
+                  </button>
+                  <el-text v-if="!savedFiles.length" size="small" type="info">暂无文件</el-text>
+                </el-scrollbar>
+              </aside>
+              <div v-loading="fingerprintBusy" class="fingerprint-main">
+                <el-input
+                  v-show="!treeMode"
+                  v-model="fingerprintText"
+                  type="textarea"
+                  :rows="18"
+                  resize="vertical"
+                  class="fingerprint-editor"
+                  :placeholder="editorPlaceholder"
+                />
+                <div v-show="treeMode && !cipherMode" class="fingerprint-tree">
+                  <el-tree
+                    :data="treeNodes"
+                    node-key="id"
+                    :props="{ label: 'label', children: 'children' }"
+                    :expand-on-click-node="true"
+                  >
+                    <template #default="{ data }">
+                      <span class="tree-label">
+                        <span class="tree-key">{{ data.label }}</span>
+                        <span class="tree-summary">{{ data.summary }}</span>
+                      </span>
+                    </template>
+                  </el-tree>
+                </div>
+              </div>
             </div>
           </el-form-item>
         </section>
@@ -137,9 +172,11 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Delete, FolderOpened, Plus, Refresh } from '@element-plus/icons-vue';
 import * as kernelsApi from '@/api/kernels';
+import * as scriptsApi from '@/api/scripts';
+import * as fingerprintsApi from '@/api/fingerprints';
 
 const SOURCE_IDS = ['dev', 'test', 'prod'];
 
@@ -212,6 +249,13 @@ const customFlags = ref([]);
 const fingerprintText = ref(JSON.stringify(defaultFingerprint, null, 2));
 const fingerprintFileName = ref('');
 const treeMode = ref(false);
+const cipherMode = ref(false);
+const baseUrl = ref('');
+const bearer = ref('');
+const savedFiles = ref([]);
+const activeSavedName = ref('');
+const fingerprintBusy = ref(false);
+const saving = ref(false);
 const fileInput = ref(null);
 
 const allSourcesChecked = computed(() => sources.value.length === SOURCE_IDS.length);
@@ -221,7 +265,9 @@ const sourcesIndeterminate = computed(
 const filteredKernels = computed(() =>
   kernels.value.filter((item) => sources.value.includes(item.source))
 );
+const editorPlaceholder = computed(() => (cipherMode.value ? '指纹密文（Base64）' : '指纹 JSON'));
 const treeNodes = computed(() => {
+  if (cipherMode.value) return [];
   try {
     return nodesOf(JSON.parse(fingerprintText.value), '');
   } catch {
@@ -256,19 +302,26 @@ function pickFingerprint() {
 async function onFingerprintFile(event) {
   const file = event.target.files?.[0];
   event.target.value = '';
-  if (!file) return;
+  if (!file || fingerprintBusy.value) return;
+  fingerprintBusy.value = true;
   try {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    fingerprintText.value = JSON.stringify(parsed, null, 2);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const text = await fingerprintsApi.decryptFingerprint(bytesToBase64(bytes));
+    fingerprintText.value = text;
     fingerprintFileName.value = file.name;
+    cipherMode.value = false;
+    treeMode.value = false;
+    activeSavedName.value = '';
     ElMessage.success(`已载入 ${file.name}`);
-  } catch {
-    ElMessage.error('所选文件不是合法 JSON');
+  } catch (e) {
+    ElMessage.error(e.message || '解密失败');
+  } finally {
+    fingerprintBusy.value = false;
   }
 }
 
 function guardTreeMode() {
+  if (cipherMode.value) return false;
   if (treeMode.value) return true;
   try {
     JSON.parse(fingerprintText.value);
@@ -277,6 +330,150 @@ function guardTreeMode() {
     ElMessage.error('JSON 格式不正确，无法切换到树形');
     return false;
   }
+}
+
+async function guardCipherMode() {
+  if (fingerprintBusy.value) return false;
+  fingerprintBusy.value = true;
+  try {
+    if (!cipherMode.value) {
+      assertPlainObject(fingerprintText.value);
+      const encoded = await fingerprintsApi.encryptFingerprint({
+        plaintext: fingerprintText.value,
+        baseUrl: baseUrl.value,
+        bearer: bearer.value
+      });
+      fingerprintText.value = encoded;
+      treeMode.value = false;
+      return true;
+    }
+    fingerprintText.value = await fingerprintsApi.decryptFingerprint(fingerprintText.value);
+    return true;
+  } catch (e) {
+    ElMessage.error(e.message || '转换失败');
+    return false;
+  } finally {
+    fingerprintBusy.value = false;
+  }
+}
+
+function assertPlainObject(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('明文不是合法 JSON');
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error('指纹内容必须是 JSON 对象');
+  }
+}
+
+function validateSaveName(value) {
+  const name = value ?? '';
+  if (
+    !name.trim() ||
+    name !== name.trim() ||
+    name === '.' ||
+    name === '..' ||
+    name.includes('..') ||
+    /[\\/]/.test(name)
+  ) {
+    return '文件名不能为空，且不能包含路径';
+  }
+  return true;
+}
+
+async function saveFingerprint() {
+  if (fingerprintBusy.value) return;
+  let name = '';
+  try {
+    const result = await ElMessageBox.prompt('请输入保存文件名称', '保存指纹', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: activeSavedName.value || '',
+      inputValidator: validateSaveName
+    });
+    name = result.value;
+  } catch {
+    return;
+  }
+  if (savedFiles.value.some((item) => item.name === name)) {
+    try {
+      await ElMessageBox.confirm(`「${name}」已存在，是否覆盖？`, '覆盖确认', {
+        confirmButtonText: '覆盖',
+        cancelButtonText: '取消',
+        type: 'warning'
+      });
+    } catch {
+      return;
+    }
+  }
+  fingerprintBusy.value = true;
+  saving.value = true;
+  try {
+    let encoded = fingerprintText.value.trim();
+    if (!cipherMode.value) {
+      assertPlainObject(fingerprintText.value);
+      encoded = await fingerprintsApi.encryptFingerprint({
+        plaintext: fingerprintText.value,
+        baseUrl: baseUrl.value,
+        bearer: bearer.value
+      });
+    }
+    await fingerprintsApi.saveFingerprint(name, encoded);
+    await loadSavedFiles();
+    activeSavedName.value = name;
+    fingerprintFileName.value = name;
+    ElMessage.success(`已保存 ${name}`);
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败');
+  } finally {
+    fingerprintBusy.value = false;
+    saving.value = false;
+  }
+}
+
+async function openSaved(name) {
+  if (fingerprintBusy.value) return;
+  fingerprintBusy.value = true;
+  try {
+    const encoded = await fingerprintsApi.readFingerprint(name);
+    fingerprintText.value = await fingerprintsApi.decryptFingerprint(encoded);
+    cipherMode.value = false;
+    treeMode.value = false;
+    fingerprintFileName.value = name;
+    activeSavedName.value = name;
+  } catch (e) {
+    ElMessage.error(e.message || '读取指纹失败');
+  } finally {
+    fingerprintBusy.value = false;
+  }
+}
+
+async function loadSavedFiles() {
+  savedFiles.value = await fingerprintsApi.listFingerprints();
+}
+
+async function loadEncryptDefaults() {
+  try {
+    const items = await scriptsApi.listScripts();
+    const script = items.find((item) => item.name === '指纹加密');
+    const vars = script?.variables || [];
+    baseUrl.value = vars.find((item) => item.name === 'baseUrl')?.value ?? '';
+    bearer.value = vars.find((item) => item.name === 'Bearer')?.value ?? '';
+  } catch (e) {
+    ElMessage.error(e.message || '加载加密变量失败');
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 function nodesOf(value, parentPath) {
@@ -322,7 +519,13 @@ async function loadKernels() {
   }
 }
 
-onMounted(loadKernels);
+onMounted(() => {
+  loadKernels();
+  loadEncryptDefaults();
+  loadSavedFiles().catch((e) => {
+    ElMessage.error(e.message || '加载指纹文件失败');
+  });
+});
 </script>
 
 <style scoped>
@@ -393,6 +596,62 @@ onMounted(loadKernels);
 
 .file-input {
   display: none;
+}
+
+.fingerprint-body {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  min-height: 360px;
+}
+
+.fingerprint-files {
+  flex: 0 0 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 360px;
+  max-height: 520px;
+  padding: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-blank);
+}
+
+.fingerprint-file-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.fingerprint-file {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--el-border-radius-base);
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.fingerprint-file:hover,
+.fingerprint-file.active {
+  background: var(--el-fill-color-light);
+  color: var(--el-color-primary);
+}
+
+.fingerprint-file:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.fingerprint-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .fingerprint-editor :deep(textarea) {

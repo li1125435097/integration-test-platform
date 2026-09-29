@@ -12,6 +12,7 @@ import (
 	"integration-test-platform/server/src/assets"
 	"integration-test-platform/server/src/config"
 	"integration-test-platform/server/src/executions"
+	"integration-test-platform/server/src/fingerprints"
 	"integration-test-platform/server/src/handler"
 	"integration-test-platform/server/src/interpreters"
 	"integration-test-platform/server/src/menu"
@@ -73,6 +74,12 @@ func main() {
 
 	runner := scriptexec.NewRunner(dataDir, scriptSvc, interpSvc, recordSvc)
 	handler.RegisterScripts(r, scriptSvc, runner)
+
+	fpSvc := fingerprints.NewService(dataDir, scriptSvc, runner)
+	if err := fpSvc.EnsureDir(); err != nil {
+		log.Fatalf("fingerprints: %v", err)
+	}
+	handler.RegisterFingerprints(r, fpSvc)
 
 	r.GET("/", func(c *gin.Context) {
 		if disk := webAssets.DiskRoot(); disk != "" {

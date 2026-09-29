@@ -96,6 +96,20 @@ func (r *Runner) RunSaved(scriptID string, overrides map[string]string) *Output 
 	return r.execute(language, interpreterID, mainName, files, scriptID, name, true)
 }
 
+// RunSavedQuiet executes a saved script without an execution record.
+// extras are written into the run directory after placeholder substitution.
+func (r *Runner) RunSavedQuiet(scriptID string, overrides map[string]string, extras []scripts.WorkspaceFile) *Output {
+	language, interpreterID, _, mainName, files, variables, err := r.Scripts.ResolveSaved(scriptID)
+	if err != nil {
+		return &Output{Error: err.Error(), ExitCode: -1}
+	}
+	files = scripts.ApplyFileVariables(files, scripts.DefaultsMap(variables), overrides)
+	if len(extras) > 0 {
+		files = append(files, extras...)
+	}
+	return r.execute(language, interpreterID, mainName, files, "", "", false)
+}
+
 func (r *Runner) execute(language, interpreterID, mainName string, files []scripts.WorkspaceFile, scriptID, scriptName string, persist bool) *Output {
 	start := time.Now()
 	out := &Output{}
