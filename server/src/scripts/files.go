@@ -362,20 +362,20 @@ func (s *Service) ResolveFiles(selfID, language, content string, files []FileInp
 }
 
 // ResolveSaved materializes the on-disk workspace for a saved run.
-func (s *Service) ResolveSaved(id string) (language, interpreterID, scriptName, mainName string, files []WorkspaceFile, err error) {
+func (s *Service) ResolveSaved(id string) (language, interpreterID, scriptName, mainName string, files []WorkspaceFile, variables []Variable, err error) {
 	sc, err := s.findScript(id)
 	if err != nil {
-		return "", "", "", "", nil, err
+		return "", "", "", "", nil, nil, err
 	}
 	inputs, err := s.inputsFromDisk(*sc)
 	if err != nil {
-		return sc.Language, sc.InterpreterID, sc.Name, "", nil, err
+		return sc.Language, sc.InterpreterID, sc.Name, "", nil, sc.Variables, err
 	}
 	mainName, files, err = s.ResolveFiles(id, sc.Language, "", inputs)
 	if err != nil {
-		return sc.Language, sc.InterpreterID, sc.Name, "", nil, err
+		return sc.Language, sc.InterpreterID, sc.Name, "", nil, sc.Variables, err
 	}
-	return sc.Language, sc.InterpreterID, sc.Name, mainName, files, nil
+	return sc.Language, sc.InterpreterID, sc.Name, mainName, files, sc.Variables, nil
 }
 
 func (s *Service) detailFor(sc Script, all []Script) *Detail {

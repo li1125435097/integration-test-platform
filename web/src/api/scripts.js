@@ -101,13 +101,17 @@ export async function runScriptPreview(payload) {
   );
 }
 
-/** 列表页执行已保存脚本：入库执行记录 */
-export async function runScript(id) {
+/** 列表页执行已保存脚本：入库执行记录。variables 只含本次覆盖默认值的键。 */
+export async function runScript(id, variables) {
+  const body = {};
+  if (variables && Object.keys(variables).length) {
+    body.variables = variables;
+  }
   return parseJson(
     await fetch(`/api/scripts/${encodeURIComponent(id)}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
+      body: JSON.stringify(body)
     })
   );
 }

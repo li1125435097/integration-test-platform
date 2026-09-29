@@ -1,5 +1,5 @@
 <template>
-  <div class="page-block">
+  <div class="page-block page-fill">
     <el-row justify="space-between" align="middle">
       <el-text tag="h2" size="large">解释器管理</el-text>
       <el-space>
@@ -8,7 +8,7 @@
       </el-space>
     </el-row>
 
-    <el-card shadow="hover" class="page-card">
+    <el-card shadow="hover" class="page-card table-card">
       <template #header>
         <el-row justify="space-between" align="middle">
           <el-text type="info">配置各语言解释器路径与默认启动参数；自动获取会扫描 PATH 等环境变量目录</el-text>
@@ -16,7 +16,7 @@
         </el-row>
       </template>
 
-      <el-table v-loading="loading" :data="interpreters" border stripe style="width: 100%">
+      <el-table v-loading="loading" :data="interpreters" border stripe height="100%" style="width: 100%">
         <el-table-column type="index" label="#" width="56" align="center" />
         <el-table-column label="语言" width="132" align="center">
           <template #default="{ row }">

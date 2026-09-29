@@ -71,6 +71,11 @@
               />
             </el-form-item>
           </el-col>
+          <el-col v-for="item in variableDefaults" :key="item.name" :span="24">
+            <el-form-item :label="item.name">
+              <el-input v-model="item.value" placeholder="默认值" clearable />
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
     </el-card>
@@ -223,6 +228,12 @@
       </template>
     </el-dialog>
 
+    <ScriptVariableRunDialog
+      v-model="varRunVisible"
+      :variables="runVarDefaults"
+      @confirm="onPreviewVarsConfirm"
+    />
+
     <ScriptRunResultDialog
       v-model="runResultVisible"
       title="试执行结果（未写入执行记录）"
@@ -238,6 +249,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Check, FolderAdd, VideoPlay, Lock, Warning } from '@element-plus/icons-vue';
 import ScriptRunResultDialog from '@/components/ScriptRunResultDialog.vue';
+import ScriptVariableRunDialog from '@/components/ScriptVariableRunDialog.vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, Compartment } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
@@ -262,6 +274,7 @@ import {
   renameOwnedFilesForLanguage,
   requireHint
 } from '@/utils/scriptFiles';
+import { extractVariables } from '@/utils/scriptVariables';
 
 const route = useRoute();
 const router = useRouter();
@@ -281,6 +294,10 @@ const interpreters = ref([]);
 const runLoading = ref(false);
 const runResultVisible = ref(false);
 const runResult = ref(null);
+const varRunVisible = ref(false);
+const runVarDefaults = ref([]);
+const pendingPreviewPayload = ref(null);
+const variableDefaults = ref([]);
 const files = ref([emptyMainFile('javascript')]);
 const activeFile = ref(mainFileName('javascript'));
 const languageBeforeChange = ref('javascript');
@@ -385,7 +402,10 @@ function createEditor(doc, lang, readOnly) {
     extensions: [
       basicSetup,
       langCompartment.of(langExtension(lang)),
-      readOnlyCompartment.of(EditorState.readOnly.of(!!readOnly))
+      readOnlyCompartment.of(EditorState.readOnly.of(!!readOnly)),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) refreshVariables();
+      })
     ],
     parent: editorHost.value
   });
@@ -413,6 +433,57 @@ function flushEditorToFile() {
   cur.content = editorView.state.doc.toString();
 }
 
+function currentContents() {
+  return files.value.map((f) => {
+    if (f.name === activeFile.value && editorView && !isReadOnlyFile(f)) {
+      return editorView.state.doc.toString();
+    }
+    return f.content || '';
+  });
+}
+
+function refreshVariables(savedList) {
+  const found = extractVariables(currentContents());
+  const prev = new Map(variableDefaults.value.map((v) => [v.name, v]));
+  const saved = new Map();
+  if (Array.isArray(savedList)) {
+    for (const v of savedList) {
+      if (v?.name) saved.set(v.name, v.value ?? '');
+    }
+  }
+  const same =
+    !Array.isArray(savedList) &&
+    found.length === variableDefaults.value.length &&
+    found.every((item, i) => {
+      const cur = variableDefaults.value[i];
+      return cur.name === item.name && (cur.inlineDefault ?? null) === (item.inlineDefault ?? null);
+    });
+  if (same) return;
+  variableDefaults.value = found.map((item) => {
+    const old = prev.get(item.name);
+    if (old && !saved.has(item.name)) {
+      let value = old.value ?? '';
+      const prevInline = old.inlineDefault ?? null;
+      if ((item.inlineDefault ?? null) !== prevInline && value === (prevInline ?? '')) {
+        value = item.inlineDefault ?? '';
+      }
+      return { name: item.name, value, inlineDefault: item.inlineDefault };
+    }
+    if (saved.has(item.name)) {
+      return {
+        name: item.name,
+        value: saved.get(item.name),
+        inlineDefault: item.inlineDefault
+      };
+    }
+    return {
+      name: item.name,
+      value: item.inlineDefault ?? '',
+      inlineDefault: item.inlineDefault
+    };
+  });
+}
+
 function selectFile(name) {
   if (!name || name === activeFile.value) return;
   flushEditorToFile();
@@ -437,6 +508,8 @@ async function onTabRemove(name) {
   if (removingActive) {
     activeFile.value = mainFileName(form.language);
     applyEditor(currentFile.value);
+  } else {
+    refreshVariables();
   }
 }
 
@@ -551,6 +624,7 @@ async function confirmAddFile() {
 
 function getPayload() {
   flushEditorToFile();
+  refreshVariables();
   const main = files.value.find((f) => f.kind === 'main') || files.value[0];
   return {
     name: form.name.trim(),
@@ -564,21 +638,29 @@ function getPayload() {
       content: f.kind === 'ref' ? '' : f.content || '',
       sourceScriptId: f.sourceScriptId || '',
       sourceFileName: f.sourceFileName || ''
+    })),
+    variables: variableDefaults.value.map((v) => ({
+      name: v.name,
+      value: v.value ?? ''
     }))
   };
 }
 
-async function onRunPreview() {
-  const payload = getPayload();
-  if (!(payload.content || '').trim()) {
-    ElMessage.warning('main 脚本内容为空');
-    return;
-  }
+async function executePreview(payload, overrides) {
   runResultVisible.value = true;
   runLoading.value = true;
   runResult.value = null;
+  const variableDefaultsPayload = payload.variables || [];
+  const body = { ...payload };
+  delete body.variables;
+  if (variableDefaultsPayload.length) {
+    body.variableDefaults = variableDefaultsPayload;
+  }
+  if (overrides && Object.keys(overrides).length) {
+    body.variables = overrides;
+  }
   try {
-    runResult.value = await scriptsApi.runScriptPreview(payload);
+    runResult.value = await scriptsApi.runScriptPreview(body);
   } catch (e) {
     runResult.value = {
       success: false,
@@ -591,6 +673,31 @@ async function onRunPreview() {
   } finally {
     runLoading.value = false;
   }
+}
+
+async function onRunPreview() {
+  const payload = getPayload();
+  if (!(payload.content || '').trim()) {
+    ElMessage.warning('main 脚本内容为空');
+    return;
+  }
+  if ((payload.variables || []).length) {
+    pendingPreviewPayload.value = payload;
+    runVarDefaults.value = payload.variables.map((v) => ({
+      name: v.name,
+      value: v.value ?? ''
+    }));
+    varRunVisible.value = true;
+    return;
+  }
+  await executePreview(payload, {});
+}
+
+async function onPreviewVarsConfirm(overrides) {
+  const payload = pendingPreviewPayload.value;
+  pendingPreviewPayload.value = null;
+  if (!payload) return;
+  await executePreview(payload, overrides);
 }
 
 async function save() {
@@ -666,6 +773,7 @@ async function loadScript(id) {
     activeFile.value = (files.value.find((f) => f.kind === 'main') || files.value[0]).name;
     await nextTick();
     createEditor(currentFile.value?.content || '', form.language, isReadOnlyFile(currentFile.value));
+    refreshVariables(data.variables);
   } catch {
     ElMessage.error('加载脚本失败');
     router.push('/scripts');
@@ -680,9 +788,11 @@ function initFromRoute() {
     form.description = '';
     form.interpreterId = '';
     applyDefaultLanguage();
+    variableDefaults.value = [];
     files.value = [emptyMainFile(form.language)];
     activeFile.value = mainFileName(form.language);
     languageBeforeChange.value = form.language;
+    refreshVariables();
     nextTick(() => {
       createEditor('', form.language, false);
     });

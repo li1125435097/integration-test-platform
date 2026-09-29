@@ -85,6 +85,7 @@ func (sc Script) toListItem() ListItem {
 		InterpreterID: sc.InterpreterID,
 		UpdatedAt:     sc.UpdatedAt,
 		Files:         fileEntries(effectiveFiles(sc)),
+		Variables:     sc.Variables,
 	}
 }
 
@@ -167,6 +168,7 @@ type CreateInput struct {
 	Content       string
 	InterpreterID string
 	Files         []FileInput
+	Variables     []Variable
 }
 
 // Create adds a new script with initial workspace files.
@@ -202,6 +204,7 @@ func (s *Service) Create(in CreateInput) (*Detail, error) {
 		InterpreterID: in.InterpreterID,
 		FileName:      mainName,
 		Files:         metaFromInputs(prepared),
+		Variables:     NormalizeVariables(in.Variables),
 		UpdatedAt:     now,
 		Versions:      []Version{},
 	}
@@ -222,6 +225,7 @@ type UpdateInput struct {
 	Content       string
 	InterpreterID string
 	Files         []FileInput
+	Variables     []Variable
 }
 
 // Update saves metadata and workspace files.
@@ -264,6 +268,7 @@ func (s *Service) Update(id string, in UpdateInput) (*Detail, error) {
 		sc.InterpreterID = in.InterpreterID
 		sc.FileName = mainName
 		sc.Files = metaFromInputs(prepared)
+		sc.Variables = NormalizeVariables(in.Variables)
 		sc.UpdatedAt = time.Now().UTC()
 		updated = *sc
 		all = append([]Script(nil), f.Scripts...)

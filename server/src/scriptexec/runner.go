@@ -45,10 +45,12 @@ func NewRunner(dataDir string, scriptsSvc *scripts.Service, interpSvc *interpret
 
 // PreviewInput runs editor content without persisting a record.
 type PreviewInput struct {
-	Language      string
-	InterpreterID string
-	Content       string
-	Files         []scripts.FileInput
+	Language         string
+	InterpreterID    string
+	Content          string
+	Files            []scripts.FileInput
+	VariableDefaults []scripts.Variable
+	Variables        map[string]string
 }
 
 // Output is the result of a script run.
@@ -71,12 +73,14 @@ func (r *Runner) RunPreview(in PreviewInput) *Output {
 	if err != nil {
 		return &Output{Error: err.Error(), ExitCode: -1}
 	}
+	files = scripts.ApplyFileVariables(files, scripts.DefaultsMap(in.VariableDefaults), in.Variables)
 	return r.execute(in.Language, in.InterpreterID, mainName, files, "", "", false)
 }
 
 // RunSaved executes the on-disk script and persists an execution record.
-func (r *Runner) RunSaved(scriptID string) *Output {
-	language, interpreterID, name, mainName, files, err := r.Scripts.ResolveSaved(scriptID)
+// overrides replaces saved defaults for this run; omitted names keep their defaults.
+func (r *Runner) RunSaved(scriptID string, overrides map[string]string) *Output {
+	language, interpreterID, name, mainName, files, variables, err := r.Scripts.ResolveSaved(scriptID)
 	if err != nil {
 		out := &Output{Error: err.Error(), ExitCode: -1}
 		if errors.Is(err, scripts.ErrNotFound) {
@@ -88,6 +92,7 @@ func (r *Runner) RunSaved(scriptID string) *Output {
 		}
 		return out
 	}
+	files = scripts.ApplyFileVariables(files, scripts.DefaultsMap(variables), overrides)
 	return r.execute(language, interpreterID, mainName, files, scriptID, name, true)
 }
 

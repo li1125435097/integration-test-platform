@@ -69,6 +69,7 @@ func main() {
 		log.Fatalf("execution records: %v", err)
 	}
 	handler.RegisterExecutionRecords(r, recordSvc)
+	handler.RegisterKernels(r)
 
 	runner := scriptexec.NewRunner(dataDir, scriptSvc, interpSvc, recordSvc)
 	handler.RegisterScripts(r, scriptSvc, runner)

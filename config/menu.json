@@ -14,6 +14,11 @@
       "id": "execution-records",
       "title": "执行记录",
       "path": "/execution-records"
+    },
+    {
+      "id": "kernel-test",
+      "title": "内核测试",
+      "path": "/kernel-test"
     }
   ]
 }

@@ -43,10 +43,12 @@ type fileBody struct {
 }
 
 type runPreviewBody struct {
-	Language      string     `json:"language"`
-	InterpreterID string     `json:"interpreterId"`
-	Content       string     `json:"content"`
-	Files         []fileBody `json:"files"`
+	Language         string             `json:"language"`
+	InterpreterID    string             `json:"interpreterId"`
+	Content          string             `json:"content"`
+	Files            []fileBody         `json:"files"`
+	VariableDefaults []scripts.Variable `json:"variableDefaults"`
+	Variables        map[string]string  `json:"variables"`
 }
 
 func toFileInputs(files []fileBody) []scripts.FileInput {
@@ -80,10 +82,12 @@ func (h Scripts) RunPreview(c *gin.Context) {
 		body.Language = "javascript"
 	}
 	out := h.Runner.RunPreview(scriptexec.PreviewInput{
-		Language:      body.Language,
-		InterpreterID: body.InterpreterID,
-		Content:       body.Content,
-		Files:         toFileInputs(body.Files),
+		Language:         body.Language,
+		InterpreterID:    body.InterpreterID,
+		Content:          body.Content,
+		Files:            toFileInputs(body.Files),
+		VariableDefaults: body.VariableDefaults,
+		Variables:        body.Variables,
 	})
 	c.JSON(http.StatusOK, out)
 }
@@ -94,7 +98,16 @@ func (h Scripts) RunSaved(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	out := h.Runner.RunSaved(id)
+	var body struct {
+		Variables map[string]string `json:"variables"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+			return
+		}
+	}
+	out := h.Runner.RunSaved(id, body.Variables)
 	if out.Error != "" {
 		switch out.Error {
 		case scripts.ErrNotFound.Error():
@@ -118,12 +131,13 @@ func (h Scripts) List(c *gin.Context) {
 }
 
 type scriptBody struct {
-	Name          string     `json:"name"`
-	Description   string     `json:"description"`
-	Language      string     `json:"language"`
-	Content       string     `json:"content"`
-	InterpreterID string     `json:"interpreterId"`
-	Files         []fileBody `json:"files"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Language      string             `json:"language"`
+	Content       string             `json:"content"`
+	InterpreterID string             `json:"interpreterId"`
+	Files         []fileBody         `json:"files"`
+	Variables     []scripts.Variable `json:"variables"`
 }
 
 func (h Scripts) Create(c *gin.Context) {
@@ -142,6 +156,7 @@ func (h Scripts) Create(c *gin.Context) {
 		Content:       body.Content,
 		InterpreterID: body.InterpreterID,
 		Files:         toFileInputs(body.Files),
+		Variables:     body.Variables,
 	})
 	if err != nil {
 		writeScriptError(c, err)
@@ -177,6 +192,7 @@ func (h Scripts) Update(c *gin.Context) {
 		Content:       body.Content,
 		InterpreterID: body.InterpreterID,
 		Files:         toFileInputs(body.Files),
+		Variables:     body.Variables,
 	})
 	if err != nil {
 		writeScriptError(c, err)

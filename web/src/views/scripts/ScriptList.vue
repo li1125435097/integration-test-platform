@@ -1,11 +1,11 @@
 <template>
-  <div class="page-block">
+  <div class="page-block page-fill">
     <el-row justify="space-between" align="middle">
       <el-text tag="h2" size="large">脚本管理</el-text>
       <el-button type="primary" :icon="Plus" @click="goNew">新增脚本</el-button>
     </el-row>
 
-    <el-card shadow="hover" class="page-card">
+    <el-card shadow="hover" class="page-card table-card">
       <template #header>
         <el-row justify="space-between" align="middle">
           <el-text type="info">管理测试脚本与版本快照</el-text>
@@ -13,7 +13,7 @@
         </el-row>
       </template>
 
-      <el-table v-loading="loading" :data="scripts" border stripe style="width: 100%">
+      <el-table v-loading="loading" :data="scripts" border stripe height="100%" style="width: 100%">
         <el-table-column type="index" label="#" width="56" align="center" />
         <el-table-column prop="name" label="脚本名称" min-width="120" show-overflow-tooltip />
         <el-table-column prop="description" label="脚本描述" min-width="140" show-overflow-tooltip />
@@ -162,6 +162,12 @@
       </template>
     </el-dialog>
 
+    <ScriptVariableRunDialog
+      v-model="varRunVisible"
+      :variables="runVarDefaults"
+      @confirm="onSavedVarsConfirm"
+    />
+
     <ScriptRunResultDialog
       v-model="runResultVisible"
       :title="runResultTitle"
@@ -177,6 +183,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, EditPen, Clock, Delete, VideoPlay } from '@element-plus/icons-vue';
 import ScriptRunResultDialog from '@/components/ScriptRunResultDialog.vue';
+import ScriptVariableRunDialog from '@/components/ScriptVariableRunDialog.vue';
 import * as scriptsApi from '@/api/scripts';
 import * as interpretersApi from '@/api/interpreters';
 import { formatTime, languageLabel } from '@/utils/format';
@@ -187,6 +194,7 @@ import {
   versionDisplayId,
   versionRemark
 } from '@/utils/versions';
+import { variablesForCurrentScript } from '@/utils/scriptVariables';
 
 const router = useRouter();
 const loading = ref(false);
@@ -213,6 +221,9 @@ const remarkVersionDisplayId = ref('');
 const remarkDraft = ref('');
 
 const runScriptId = ref('');
+const varRunVisible = ref(false);
+const runVarDefaults = ref([]);
+const varRunRow = ref(null);
 const runLoading = ref(false);
 const runResultVisible = ref(false);
 const runResultTitle = ref('执行结果');
@@ -354,14 +365,14 @@ async function confirmRestore() {
   }
 }
 
-async function onRunScript(row) {
+async function executeSaved(row, overrides) {
   runScriptId.value = row.id;
   runResultTitle.value = `执行结果 · ${row.name || row.id}`;
   runResultVisible.value = true;
   runLoading.value = true;
   runResult.value = null;
   try {
-    runResult.value = await scriptsApi.runScript(row.id);
+    runResult.value = await scriptsApi.runScript(row.id, overrides);
   } catch (e) {
     runResult.value = {
       success: false,
@@ -375,6 +386,34 @@ async function onRunScript(row) {
     runLoading.value = false;
     runScriptId.value = '';
   }
+}
+
+async function onRunScript(row) {
+  runScriptId.value = row.id;
+  let vars = [];
+  try {
+    const detail = await scriptsApi.getScript(row.id);
+    vars = variablesForCurrentScript(detail);
+  } catch (e) {
+    runScriptId.value = '';
+    ElMessage.error(e.message || '加载脚本变量失败');
+    return;
+  }
+  if (!vars.length) {
+    await executeSaved(row, {});
+    return;
+  }
+  runScriptId.value = '';
+  varRunRow.value = row;
+  runVarDefaults.value = vars;
+  varRunVisible.value = true;
+}
+
+async function onSavedVarsConfirm(overrides) {
+  const row = varRunRow.value;
+  varRunRow.value = null;
+  if (!row) return;
+  await executeSaved(row, overrides);
 }
 
 async function confirmDelete(row) {

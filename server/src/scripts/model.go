@@ -22,6 +22,12 @@ type ScriptFile struct {
 	SourceFileName string `json:"sourceFileName,omitempty"`
 }
 
+// Variable is a {{name}} placeholder and its saved default value.
+type Variable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // Script is metadata for one script; bodies live on disk under script-files/.
 type Script struct {
 	ID            string       `json:"id"`
@@ -31,6 +37,7 @@ type Script struct {
 	InterpreterID string       `json:"interpreterId,omitempty"`
 	FileName      string       `json:"fileName"`
 	Files         []ScriptFile `json:"files,omitempty"`
+	Variables     []Variable   `json:"variables,omitempty"`
 	UpdatedAt     time.Time    `json:"updatedAt"`
 	Versions      []Version    `json:"versions"`
 }
@@ -59,6 +66,7 @@ type ListItem struct {
 	UpdatedAt      time.Time   `json:"updatedAt"`
 	CurrentVersion string      `json:"currentVersion"`
 	Files          []FileEntry `json:"files"`
+	Variables      []Variable  `json:"variables,omitempty"`
 }
 
 // FileDetail is one editor tab including resolved content.

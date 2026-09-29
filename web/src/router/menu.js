@@ -37,6 +37,17 @@ export const menuRoutes = [
     }
   },
   {
+    path: '/kernel-test',
+    name: 'kernel-test',
+    component: () => import('@/views/kernels/KernelTest.vue'),
+    meta: {
+      menu: {
+        title: '内核测试',
+        icon: 'ChromeFilled'
+      }
+    }
+  },
+  {
     path: '/script-editor/:id',
     name: 'script-editor',
     component: () => import('@/views/scripts/ScriptEdit.vue'),

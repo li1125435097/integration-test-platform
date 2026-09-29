@@ -1,16 +1,16 @@
 <template>
-  <div class="page-block">
+  <div class="page-block page-fill">
     <el-row justify="space-between" align="middle">
       <el-text tag="h2" size="large">执行记录</el-text>
       <el-button :icon="Refresh" circle @click="loadList" :loading="loading" />
     </el-row>
 
-    <el-card shadow="hover" class="page-card">
+    <el-card shadow="hover" class="page-card table-card">
       <template #header>
         <el-text type="info">脚本列表「执行」产生的运行记录（编辑页试运行为不入库）</el-text>
       </template>
 
-      <el-table v-loading="loading" :data="records" border stripe style="width: 100%">
+      <el-table v-loading="loading" :data="records" border stripe height="100%" style="width: 100%">
         <el-table-column type="index" label="#" width="56" align="center" />
         <el-table-column prop="scriptName" label="脚本名称" min-width="120" show-overflow-tooltip />
         <el-table-column label="语言" width="112" align="center">
