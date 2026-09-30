@@ -9,6 +9,7 @@ import (
 
 	"integration-test-platform/server/src/assets"
 	"integration-test-platform/server/src/config"
+	"integration-test-platform/server/src/dataio"
 	"integration-test-platform/server/src/executions"
 	"integration-test-platform/server/src/fingerprints"
 	"integration-test-platform/server/src/handler"
@@ -55,6 +56,7 @@ func main() {
 	handler.RegisterMenu(r, menuFile.Items)
 
 	dataDir := paths.DataDir(configDir)
+	handler.RegisterData(r, dataio.NewService(dataDir))
 	scriptSvc := scripts.NewService(dataDir)
 	if err := scriptSvc.EnsureDataDir(); err != nil {
 		log.Fatalf("data dir: %v", err)

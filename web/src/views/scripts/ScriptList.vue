@@ -2,8 +2,19 @@
   <div class="page-block page-fill">
     <el-row justify="space-between" align="middle">
       <el-text tag="h2" size="large">脚本管理</el-text>
-      <el-button type="primary" :icon="Plus" @click="goNew">新增脚本</el-button>
+      <el-space>
+        <el-button :icon="Upload" :loading="importing" @click="pickImport">导入</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="onExport">导出</el-button>
+        <el-button type="primary" :icon="Plus" @click="goNew">新增脚本</el-button>
+      </el-space>
     </el-row>
+    <input
+      ref="importInput"
+      class="import-input"
+      type="file"
+      accept=".zip,application/zip"
+      @change="onImportFile"
+    />
 
     <el-card shadow="hover" class="page-card table-card">
       <template #header>
@@ -181,9 +192,10 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Refresh, EditPen, Clock, Delete, VideoPlay } from '@element-plus/icons-vue';
+import { Plus, Refresh, EditPen, Clock, Delete, VideoPlay, Upload, Download } from '@element-plus/icons-vue';
 import ScriptRunResultDialog from '@/components/ScriptRunResultDialog.vue';
 import ScriptVariableRunDialog from '@/components/ScriptVariableRunDialog.vue';
+import * as dataApi from '@/api/data';
 import * as scriptsApi from '@/api/scripts';
 import * as interpretersApi from '@/api/interpreters';
 import { formatTime, languageLabel } from '@/utils/format';
@@ -198,6 +210,9 @@ import { variablesForCurrentScript } from '@/utils/scriptVariables';
 
 const router = useRouter();
 const loading = ref(false);
+const importing = ref(false);
+const exporting = ref(false);
+const importInput = ref(null);
 const scripts = ref([]);
 const interpreters = ref([]);
 
@@ -249,6 +264,56 @@ async function loadList() {
 
 function goNew() {
   router.push({ name: 'script-editor', params: { id: 'new' } });
+}
+
+function formatImportResult(result) {
+  const parts = [
+    ['脚本', result?.scripts],
+    ['执行记录', result?.records],
+    ['内核方案', result?.plans],
+    ['指纹', result?.fingerprints]
+  ].map(([label, counts]) => `${label} 新增 ${counts?.added || 0}、覆盖 ${counts?.updated || 0}`);
+  return `导入完成：${parts.join('；')}`;
+}
+
+async function onExport() {
+  exporting.value = true;
+  try {
+    await dataApi.exportData();
+  } catch (e) {
+    ElMessage.error(e.message || '导出失败');
+  } finally {
+    exporting.value = false;
+  }
+}
+
+function pickImport() {
+  importInput.value?.click();
+}
+
+async function onImportFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    await ElMessageBox.confirm(
+      '将按 ID 合并到当前数据：相同 ID 会被覆盖，本地独有的数据会保留。解释器配置不会改变。',
+      '导入数据',
+      { type: 'warning', confirmButtonText: '导入', cancelButtonText: '取消' }
+    );
+  } catch {
+    return;
+  }
+  importing.value = true;
+  try {
+    const result = await dataApi.importData(file);
+    ElMessage.success(formatImportResult(result));
+    await loadList();
+  } catch (e) {
+    ElMessage.error(e.message || '导入失败');
+  } finally {
+    importing.value = false;
+  }
 }
 
 function goEdit(id) {
@@ -443,6 +508,10 @@ onMounted(loadList);
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.import-input {
+  display: none;
 }
 
 .page-card {
