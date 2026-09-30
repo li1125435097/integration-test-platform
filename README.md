@@ -13,6 +13,72 @@
 
 > 前端已由 jQuery + Bootstrap（`web/pages/` 片段 + CDN）重构为上述 Vue 技术栈，旧的多页 HTML 片段方案已移除。
 
+## 下载
+
+发布包在仓库 [`release/`](release/) 目录。文件名带构建时的提交短哈希，当前这一批是 `69e7c72`。按本机系统选对应 zip，用 `curl` 或 `wget` 下载。
+
+| 系统 | 架构 | 文件 |
+|------|------|------|
+| Linux | amd64（x86_64） | `itp-69e7c72-linux-amd64.zip` |
+| Linux | arm64 | `itp-69e7c72-linux-arm64.zip` |
+| Windows | amd64 | `itp-69e7c72-windows-amd64.zip` |
+| macOS | amd64（Intel） | `itp-69e7c72-darwin-amd64.zip` |
+| macOS | arm64（Apple Silicon） | `itp-69e7c72-darwin-arm64.zip` |
+
+地址前缀：
+
+```text
+https://raw.githubusercontent.com/li1125435097/integration-test-platform/main/release/
+```
+
+Linux / macOS（以 Linux amd64 为例，换平台时改文件名即可）：
+
+```bash
+curl -fL -o itp-69e7c72-linux-amd64.zip \
+  https://raw.githubusercontent.com/li1125435097/integration-test-platform/main/release/itp-69e7c72-linux-amd64.zip
+```
+
+同一地址也可以用 `wget`：
+
+```bash
+wget -O itp-69e7c72-linux-amd64.zip \
+  https://raw.githubusercontent.com/li1125435097/integration-test-platform/main/release/itp-69e7c72-linux-amd64.zip
+```
+
+Windows PowerShell（`curl` 是 `Invoke-WebRequest` 的别名，二进制下载用 `curl.exe`）：
+
+```powershell
+curl.exe -fL -o itp-69e7c72-windows-amd64.zip `
+  https://raw.githubusercontent.com/li1125435097/integration-test-platform/main/release/itp-69e7c72-windows-amd64.zip
+```
+
+或：
+
+```powershell
+Invoke-WebRequest `
+  -Uri "https://raw.githubusercontent.com/li1125435097/integration-test-platform/main/release/itp-69e7c72-windows-amd64.zip" `
+  -OutFile "itp-69e7c72-windows-amd64.zip"
+```
+
+解压后在该目录启动，默认打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)。zip 里有可执行文件、`config/menu.json` 和 `RUN.txt`。
+
+Linux / macOS：
+
+```bash
+unzip itp-69e7c72-linux-amd64.zip
+cd itp-69e7c72-linux-amd64
+chmod +x integration-test-platform
+./integration-test-platform
+```
+
+Windows PowerShell：
+
+```powershell
+Expand-Archive -Path itp-69e7c72-windows-amd64.zip -DestinationPath .
+cd itp-69e7c72-windows-amd64
+.\integration-test-platform.exe
+```
+
 ## 开发
 
 需要 **Go 1.22+** 与 **Node.js 18+**（前端构建）。

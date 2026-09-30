@@ -106,8 +106,15 @@ func main() {
 	})
 	r.StaticFS("/assets", webAssets.SubFS("assets"))
 
-	log.Printf("integration-test-platform %s listening on http://localhost%s (config: %s)", version, cfg.Addr, configDir)
-	if err := r.Run(cfg.Addr); err != nil {
+	ln, bound, shifted, err := listenHTTP(cfg.Addr)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+	if shifted {
+		log.Printf("address %s in use, listening on %s", cfg.Addr, bound)
+	}
+	log.Printf("integration-test-platform %s listening on %s (config: %s)", version, httpURL(bound), configDir)
+	if err := r.RunListener(ln); err != nil {
 		log.Fatal(err)
 	}
 }
