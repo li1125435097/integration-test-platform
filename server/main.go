@@ -15,6 +15,8 @@ import (
 	"integration-test-platform/server/src/fingerprints"
 	"integration-test-platform/server/src/handler"
 	"integration-test-platform/server/src/interpreters"
+	"integration-test-platform/server/src/kernelplans"
+	"integration-test-platform/server/src/kerneltest"
 	"integration-test-platform/server/src/menu"
 	"integration-test-platform/server/src/paths"
 	"integration-test-platform/server/src/scriptexec"
@@ -80,6 +82,15 @@ func main() {
 		log.Fatalf("fingerprints: %v", err)
 	}
 	handler.RegisterFingerprints(r, fpSvc)
+
+	kernelTestSvc := kerneltest.NewService(dataDir, fpSvc, scriptSvc, runner)
+	handler.RegisterKernelTests(r, kernelTestSvc)
+
+	planSvc := kernelplans.NewService(dataDir)
+	if err := planSvc.EnsureDataDir(); err != nil {
+		log.Fatalf("kernel test plans: %v", err)
+	}
+	handler.RegisterKernelPlans(r, planSvc)
 
 	r.GET("/", func(c *gin.Context) {
 		if disk := webAssets.DiskRoot(); disk != "" {

@@ -19,6 +19,11 @@
       "id": "kernel-test",
       "title": "内核测试",
       "path": "/kernel-test"
+    },
+    {
+      "id": "kernel-test-plans",
+      "title": "内核测试方案",
+      "path": "/kernel-test-plans"
     }
   ]
 }

@@ -173,6 +173,25 @@ func (s *Service) Read(name string) ([]byte, error) {
 	return data, err
 }
 
+// Path returns the absolute path of an existing saved ciphertext file.
+func (s *Service) Path(name string) (string, error) {
+	p, err := s.filePath(name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(p); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("%w: %s", ErrNotFound, name)
+		}
+		return "", err
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
 func (s *Service) scriptID(name string) (string, error) {
 	if s.scripts == nil {
 		return "", fmt.Errorf("%w「%s」", ErrScriptNotFound, name)

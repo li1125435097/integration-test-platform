@@ -48,6 +48,17 @@ export const menuRoutes = [
     }
   },
   {
+    path: '/kernel-test-plans',
+    name: 'kernel-test-plans',
+    component: () => import('@/views/kernels/KernelTestPlans.vue'),
+    meta: {
+      menu: {
+        title: '内核测试方案',
+        icon: 'Collection'
+      }
+    }
+  },
+  {
     path: '/script-editor/:id',
     name: 'script-editor',
     component: () => import('@/views/scripts/ScriptEdit.vue'),

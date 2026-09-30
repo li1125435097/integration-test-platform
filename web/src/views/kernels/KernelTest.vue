@@ -1,9 +1,22 @@
 <template>
   <div class="page-block">
     <div class="page-header">
-      <el-row>
+      <div class="page-header-row">
         <el-text tag="h2" size="large">内核测试</el-text>
-      </el-row>
+        <div class="page-header-actions">
+          <el-button type="primary" :loading="running" :disabled="fingerprintBusy" @click="onExecute">
+            执行
+          </el-button>
+          <el-button :disabled="running || fingerprintBusy" @click="onClear">清空</el-button>
+          <el-button
+            :loading="savingPlan"
+            :disabled="running || fingerprintBusy"
+            @click="onSavePlan"
+          >
+            保存方案
+          </el-button>
+        </div>
+      </div>
     </div>
 
     <el-card shadow="hover" class="page-card">
@@ -145,6 +158,7 @@
                   resize="vertical"
                   class="fingerprint-editor"
                   :placeholder="editorPlaceholder"
+                  @input="fingerprintDirty = true"
                 />
                 <div v-show="treeMode && !cipherMode" class="fingerprint-tree">
                   <el-tree
@@ -165,18 +179,69 @@
             </div>
           </el-form-item>
         </section>
+
+        <el-divider />
+
+        <section class="form-section">
+          <div class="form-section-header">
+            <el-text type="info">脚本选择（脚本管理中名称以「内核测试-」开头的脚本）</el-text>
+            <el-button :icon="Refresh" circle :loading="scriptLoading" @click="loadScripts" />
+          </div>
+          <el-form-item label="脚本">
+            <el-select
+              v-model="selectedScriptId"
+              filterable
+              clearable
+              placeholder="选择脚本"
+              no-data-text="没有名称以「内核测试-」开头的脚本"
+              :loading="scriptLoading"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in kernelScripts"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+        </section>
       </el-form>
     </el-card>
+
+    <el-dialog v-model="concurrencyVisible" title="执行并发数" width="420px" align-center>
+      <el-form label-width="72px" @submit.prevent>
+        <el-form-item label="并发数">
+          <el-input-number v-model="concurrency" :min="1" :max="selectedKernels.length" :step="1" />
+        </el-form-item>
+        <el-text type="info" size="small">已选 {{ selectedKernels.length }} 个内核，每个内核单独执行一次脚本。</el-text>
+      </el-form>
+      <template #footer>
+        <el-button @click="concurrencyVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmConcurrency">执行</el-button>
+      </template>
+    </el-dialog>
+
+    <KernelTestResultDialog v-model="resultVisible" :loading="resultLoading" :results="runResults" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Delete, FolderOpened, Plus, Refresh } from '@element-plus/icons-vue';
 import * as kernelsApi from '@/api/kernels';
 import * as scriptsApi from '@/api/scripts';
 import * as fingerprintsApi from '@/api/fingerprints';
+import KernelTestResultDialog from '@/components/KernelTestResultDialog.vue';
+import {
+  clearCachedForm,
+  fingerprintPayload as fingerprintPayloadOf,
+  launchArgs as launchArgsOf,
+  readCachedForm,
+  writeCachedForm
+} from './formState';
 
 const SOURCE_IDS = ['dev', 'test', 'prod'];
 
@@ -240,6 +305,13 @@ const defaultFingerprint = {
   maxImageBytes: null
 };
 
+const route = useRoute();
+const router = useRouter();
+const hydrating = ref(true);
+const savingPlan = ref(false);
+const kernelsReady = ref(false);
+const scriptsReady = ref(false);
+
 const kernelLoading = ref(false);
 const kernels = ref([]);
 const sources = ref([...SOURCE_IDS]);
@@ -257,6 +329,16 @@ const activeSavedName = ref('');
 const fingerprintBusy = ref(false);
 const saving = ref(false);
 const fileInput = ref(null);
+const fingerprintDirty = ref(true);
+const scriptLoading = ref(false);
+const scripts = ref([]);
+const selectedScriptId = ref('');
+const running = ref(false);
+const concurrencyVisible = ref(false);
+const concurrency = ref(1);
+const resultVisible = ref(false);
+const resultLoading = ref(false);
+const runResults = ref([]);
 
 const allSourcesChecked = computed(() => sources.value.length === SOURCE_IDS.length);
 const sourcesIndeterminate = computed(
@@ -266,6 +348,9 @@ const filteredKernels = computed(() =>
   kernels.value.filter((item) => sources.value.includes(item.source))
 );
 const editorPlaceholder = computed(() => (cipherMode.value ? '指纹密文（Base64）' : '指纹 JSON'));
+const kernelScripts = computed(() =>
+  scripts.value.filter((item) => (item.name || '').startsWith('内核测试-'))
+);
 const treeNodes = computed(() => {
   if (cipherMode.value) return [];
   try {
@@ -276,10 +361,18 @@ const treeNodes = computed(() => {
 });
 
 watch(filteredKernels, (list) => {
+  if (hydrating.value) return;
   const allow = new Set(list.map((item) => item.path));
   const next = selectedKernels.value.filter((path) => allow.has(path));
   if (next.length !== selectedKernels.value.length) {
     selectedKernels.value = next;
+  }
+});
+
+watch(kernelScripts, (list) => {
+  if (hydrating.value) return;
+  if (!list.some((item) => item.id === selectedScriptId.value)) {
+    selectedScriptId.value = '';
   }
 });
 
@@ -312,6 +405,7 @@ async function onFingerprintFile(event) {
     cipherMode.value = false;
     treeMode.value = false;
     activeSavedName.value = '';
+    fingerprintDirty.value = true;
     ElMessage.success(`已载入 ${file.name}`);
   } catch (e) {
     ElMessage.error(e.message || '解密失败');
@@ -425,6 +519,7 @@ async function saveFingerprint() {
     await loadSavedFiles();
     activeSavedName.value = name;
     fingerprintFileName.value = name;
+    fingerprintDirty.value = false;
     ElMessage.success(`已保存 ${name}`);
   } catch (e) {
     ElMessage.error(e.message || '保存失败');
@@ -444,6 +539,7 @@ async function openSaved(name) {
     treeMode.value = false;
     fingerprintFileName.value = name;
     activeSavedName.value = name;
+    fingerprintDirty.value = false;
   } catch (e) {
     ElMessage.error(e.message || '读取指纹失败');
   } finally {
@@ -511,21 +607,280 @@ async function loadKernels() {
   kernelLoading.value = true;
   try {
     kernels.value = await kernelsApi.listKernels();
+    kernelsReady.value = true;
   } catch (e) {
     ElMessage.error(e.message || '加载内核失败');
-    kernels.value = [];
+    if (!kernelsReady.value) kernels.value = [];
   } finally {
     kernelLoading.value = false;
   }
 }
 
-onMounted(() => {
-  loadKernels();
-  loadEncryptDefaults();
-  loadSavedFiles().catch((e) => {
-    ElMessage.error(e.message || '加载指纹文件失败');
-  });
+async function loadScripts() {
+  scriptLoading.value = true;
+  try {
+    scripts.value = await scriptsApi.listScripts();
+    scriptsReady.value = true;
+  } catch (e) {
+    ElMessage.error(e.message || '加载脚本失败');
+    if (!scriptsReady.value) scripts.value = [];
+  } finally {
+    scriptLoading.value = false;
+  }
+}
+
+function formSnapshot() {
+  return {
+    sources: [...sources.value],
+    kernels: [...selectedKernels.value],
+    flags: [...selectedFlags.value],
+    customFlags: [...customFlags.value],
+    scriptId: selectedScriptId.value,
+    fingerprintText: fingerprintText.value,
+    fingerprintFileName: fingerprintFileName.value,
+    cipherMode: cipherMode.value,
+    treeMode: treeMode.value,
+    baseUrl: baseUrl.value,
+    bearer: bearer.value,
+    activeSavedName: activeSavedName.value,
+    fingerprintDirty: fingerprintDirty.value
+  };
+}
+
+function applyForm(form) {
+  const nextSources = Array.isArray(form?.sources)
+    ? form.sources.filter((id) => SOURCE_IDS.includes(id))
+    : [...SOURCE_IDS];
+  sources.value = nextSources;
+  const allow = new Set(
+    kernels.value.filter((item) => nextSources.includes(item.source)).map((item) => item.path)
+  );
+  const savedKernels = Array.isArray(form?.kernels) ? [...form.kernels] : [];
+  selectedKernels.value = kernelsReady.value
+    ? savedKernels.filter((path) => allow.has(path))
+    : savedKernels;
+  selectedFlags.value = Array.isArray(form?.flags) ? [...form.flags] : [];
+  customFlags.value = Array.isArray(form?.customFlags)
+    ? form.customFlags.map((item) => String(item ?? ''))
+    : [];
+  fingerprintText.value =
+    typeof form?.fingerprintText === 'string'
+      ? form.fingerprintText
+      : JSON.stringify(defaultFingerprint, null, 2);
+  fingerprintFileName.value = form?.fingerprintFileName || '';
+  cipherMode.value = Boolean(form?.cipherMode);
+  treeMode.value = Boolean(form?.treeMode) && !cipherMode.value;
+  baseUrl.value = form?.baseUrl ?? '';
+  bearer.value = form?.bearer ?? '';
+  activeSavedName.value = form?.activeSavedName || '';
+  fingerprintDirty.value = form?.fingerprintDirty !== false;
+  const scriptId = form?.scriptId || '';
+  selectedScriptId.value =
+    !scriptsReady.value || kernelScripts.value.some((item) => item.id === scriptId) ? scriptId : '';
+}
+
+watch(formSnapshot, (snap) => {
+  if (hydrating.value) return;
+  writeCachedForm(snap);
 });
+
+function resetFormFields() {
+  sources.value = [...SOURCE_IDS];
+  selectedKernels.value = [];
+  selectedFlags.value = [];
+  customFlags.value = [];
+  fingerprintText.value = JSON.stringify(defaultFingerprint, null, 2);
+  fingerprintFileName.value = '';
+  treeMode.value = false;
+  cipherMode.value = false;
+  activeSavedName.value = '';
+  fingerprintDirty.value = true;
+  selectedScriptId.value = '';
+}
+
+function launchArgs() {
+  return launchArgsOf(formSnapshot());
+}
+
+function fingerprintPayload() {
+  return fingerprintPayloadOf(formSnapshot());
+}
+
+function onExecute() {
+  if (running.value) return;
+  if (!selectedKernels.value.length) {
+    ElMessage.warning('请选择内核');
+    return;
+  }
+  if (!selectedScriptId.value) {
+    ElMessage.warning('请选择脚本');
+    return;
+  }
+  if (!fingerprintText.value.trim()) {
+    ElMessage.warning('指纹内容不能为空');
+    return;
+  }
+  if (selectedKernels.value.length > 1) {
+    concurrency.value = 1;
+    concurrencyVisible.value = true;
+    return;
+  }
+  execute(1);
+}
+
+function confirmConcurrency() {
+  const count = Number(concurrency.value);
+  const max = selectedKernels.value.length;
+  if (!Number.isInteger(count) || count < 1 || count > max) {
+    ElMessage.warning('并发数无效');
+    return;
+  }
+  concurrencyVisible.value = false;
+  execute(count);
+}
+
+async function execute(count) {
+  running.value = true;
+  resultVisible.value = true;
+  resultLoading.value = true;
+  runResults.value = [];
+  try {
+    runResults.value = await kernelsApi.runKernelTest({
+      scriptId: selectedScriptId.value,
+      concurrency: count,
+      kernels: [...selectedKernels.value],
+      args: launchArgs(),
+      fingerprint: fingerprintPayload()
+    });
+  } catch (e) {
+    resultVisible.value = false;
+    ElMessage.error(e.message || '执行失败');
+  } finally {
+    running.value = false;
+    resultLoading.value = false;
+  }
+}
+
+async function onClear() {
+  try {
+    await ElMessageBox.confirm('确定清空当前表单？', '清空', {
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+      type: 'warning'
+    });
+  } catch {
+    return;
+  }
+  hydrating.value = true;
+  resetFormFields();
+  await loadEncryptDefaults();
+  clearCachedForm();
+  hydrating.value = false;
+}
+
+function validatePlanName(value) {
+  const name = value ?? '';
+  if (!name.trim()) return '方案名称不能为空';
+  return true;
+}
+
+async function onSavePlan() {
+  if (savingPlan.value) return;
+  let name = '';
+  try {
+    const result = await ElMessageBox.prompt('请输入方案名称', '保存方案', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValidator: validatePlanName
+    });
+    name = result.value.trim();
+  } catch {
+    return;
+  }
+  const form = formSnapshot();
+  let existing = null;
+  try {
+    const plans = await kernelsApi.listKernelTestPlans();
+    existing = plans.find((item) => item.name === name) || null;
+  } catch (e) {
+    ElMessage.error(e.message || '保存方案失败');
+    return;
+  }
+  if (existing) {
+    try {
+      await ElMessageBox.confirm(`「${name}」已存在，是否覆盖？`, '覆盖确认', {
+        confirmButtonText: '覆盖',
+        cancelButtonText: '取消',
+        type: 'warning'
+      });
+    } catch {
+      return;
+    }
+  }
+  savingPlan.value = true;
+  try {
+    if (existing) {
+      await kernelsApi.updateKernelTestPlan(existing.id, { name, form });
+    } else {
+      await kernelsApi.createKernelTestPlan({ name, form });
+    }
+    ElMessage.success(`已保存 ${name}`);
+  } catch (e) {
+    ElMessage.error(e.message || '保存方案失败');
+  } finally {
+    savingPlan.value = false;
+  }
+}
+
+async function restoreForm() {
+  const planId = typeof route.query.planId === 'string' ? route.query.planId : '';
+  if (planId) {
+    try {
+      const plan = await kernelsApi.getKernelTestPlan(planId);
+      applyForm(plan.form);
+    } catch (e) {
+      ElMessage.error(e.message || '加载方案失败');
+      const cached = readCachedForm();
+      if (cached) applyForm(cached);
+    }
+    await router.replace({ name: 'kernel-test' });
+    return;
+  }
+  const cached = readCachedForm();
+  if (cached) applyForm(cached);
+}
+
+onMounted(async () => {
+  hydrating.value = true;
+  try {
+    await Promise.all([
+      loadKernels(),
+      loadScripts(),
+      loadEncryptDefaults(),
+      loadSavedFiles().catch((e) => {
+        ElMessage.error(e.message || '加载指纹文件失败');
+      })
+    ]);
+    await restoreForm();
+  } finally {
+    hydrating.value = false;
+    writeCachedForm(formSnapshot());
+  }
+});
+
+watch(
+  () => (typeof route.query.planId === 'string' ? route.query.planId : ''),
+  async (planId) => {
+    if (!planId || hydrating.value) return;
+    hydrating.value = true;
+    try {
+      await restoreForm();
+    } finally {
+      hydrating.value = false;
+      writeCachedForm(formSnapshot());
+    }
+  }
+);
 </script>
 
 <style scoped>
@@ -543,6 +898,19 @@ onMounted(() => {
   padding-bottom: 16px;
   margin-bottom: 0;
   background: var(--el-bg-color-page);
+}
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .page-card {
@@ -685,4 +1053,5 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
   word-break: break-all;
 }
+
 </style>
