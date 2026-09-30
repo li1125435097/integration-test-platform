@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/fs"
 	"log"
-	"net/http"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
@@ -92,19 +90,7 @@ func main() {
 	}
 	handler.RegisterKernelPlans(r, planSvc)
 
-	r.GET("/", func(c *gin.Context) {
-		if disk := webAssets.DiskRoot(); disk != "" {
-			c.File(filepath.Join(disk, "index.html"))
-			return
-		}
-		data, err := fs.ReadFile(webAssets.IORoot(), "index.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "index not found")
-			return
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-	})
-	r.StaticFS("/assets", webAssets.SubFS("assets"))
+	handler.RegisterWeb(r, webAssets)
 
 	ln, bound, shifted, err := listenHTTP(cfg.Addr)
 	if err != nil {

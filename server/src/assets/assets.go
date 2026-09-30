@@ -33,10 +33,15 @@ func New() (*Web, error) {
 	if err != nil {
 		return nil, err
 	}
+	return FromDir(root), nil
+}
+
+// FromDir serves a built SPA from an on-disk directory.
+func FromDir(dir string) *Web {
 	return &Web{
-		root:     http.Dir(root),
-		diskRoot: root,
-	}, nil
+		root:     http.Dir(dir),
+		diskRoot: dir,
+	}
 }
 
 func devWebDir() (string, error) {
@@ -87,4 +92,3 @@ func (w *Web) SubFS(name string) http.FileSystem {
 func (w *Web) DiskRoot() string {
 	return w.diskRoot
 }
-
