@@ -9,7 +9,7 @@ if [ ! -f package.json ]; then
   echo "sync-web: missing web/package.json" >&2
   exit 1
 fi
-npm ci
+# npm ci
 npm run build
 
 rm -rf "$DEST"

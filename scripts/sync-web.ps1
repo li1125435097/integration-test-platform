@@ -1,3 +1,7 @@
+param(
+  [switch]$SkipBuild
+)
+
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Web = Join-Path $Root "web"
@@ -8,8 +12,10 @@ try {
   if (-not (Test-Path "package.json")) {
     throw "sync-web: missing web/package.json"
   }
-  npm ci
-  npm run build
+  # npm ci
+  if (-not $SkipBuild) {
+    npm run build
+  }
 } finally {
   Pop-Location
 }

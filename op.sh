@@ -83,4 +83,5 @@ while true; do
   run_choice "$choice"
   echo
   echo "完成: ${cmd}"
+  exit 0
 done

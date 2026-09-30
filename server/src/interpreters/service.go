@@ -210,8 +210,12 @@ func (s *Service) BatchCreate(items []BatchItem) (*BatchResult, error) {
 	result := &BatchResult{Created: []Interpreter{}}
 	err := s.store.Update(func(f *File) error {
 		existing := make(map[string]struct{}, len(f.Interpreters))
+		hasDefault := make(map[string]bool)
 		for _, it := range f.Interpreters {
 			existing[strings.ToLower(it.Path)] = struct{}{}
+			if it.IsDefault {
+				hasDefault[it.Language] = true
+			}
 		}
 		for _, raw := range items {
 			in := SaveInput{
@@ -239,6 +243,11 @@ func (s *Service) BatchCreate(items []BatchItem) (*BatchResult, error) {
 				DefaultArgs: normalizeDefaultArgs(in.DefaultArgs),
 				Version:     resolveVersion(in.Language, abs, raw.Version),
 				UpdatedAt:   now,
+			}
+			// Auto-discover save: one default per language when none exists yet.
+			if !hasDefault[in.Language] {
+				item.IsDefault = true
+				hasDefault[in.Language] = true
 			}
 			f.Interpreters = append(f.Interpreters, item)
 			existing[key] = struct{}{}

@@ -8,6 +8,7 @@
     "start": ".\\dist\\itp-windows-amd64.exe",
     "build": "npm run build --prefix web",
     "build-release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Mode release",
+    "build-release-skip-web-build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Mode release -SkipWebBuild",
     "preview": "npm run preview --prefix web"
   }
 }

@@ -1,6 +1,7 @@
 param(
     [ValidateSet("build", "release")]
-    [string]$Mode = "build"
+    [string]$Mode = "build",
+    [switch]$SkipWebBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,11 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     if ($gitVer) { $Version = $gitVer }
 }
 
-& "$Root/scripts/sync-web.ps1"
+if ($SkipWebBuild) {
+    & "$Root/scripts/sync-web.ps1" -SkipBuild
+} else {
+    & "$Root/scripts/sync-web.ps1"
+}
 
 $LDFLAGS = "-s -w -X main.version=$Version"
 $Platforms = @(
